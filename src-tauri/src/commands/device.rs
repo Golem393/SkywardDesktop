@@ -5,6 +5,8 @@ use crate::adb::{self, Device};
 pub struct PrerequisiteResult {
     /// True if the device is authorized (USB debugging accepted).
     pub usb_authorized: bool,
+    /// True if SkywardBlocker is not already installed on the phone.
+    pub no_existing_install: bool,
     /// True if no other app is already set as device owner.
     pub no_existing_owner: bool,
     /// True if no Google accounts are present on the device (required for set-device-owner).
@@ -27,13 +29,13 @@ pub struct DeviceInfo {
 
 /// Tauri command: detect all connected Android devices via ADB.
 #[tauri::command]
-pub fn detect_devices(app: tauri::AppHandle) -> Result<Vec<Device>, String> {
+pub async fn detect_devices(app: tauri::AppHandle) -> Result<Vec<Device>, String> {
     adb::detect_devices(Some(&app)).map_err(|e| e.to_string())
 }
 
 /// Tauri command: get detailed device info via `adb shell getprop`.
 #[tauri::command]
-pub fn get_device_info(app: tauri::AppHandle, device_id: String) -> Result<DeviceInfo, String> {
+pub async fn get_device_info(app: tauri::AppHandle, device_id: String) -> Result<DeviceInfo, String> {
     let get_prop = |prop: &str| -> String {
         adb::run_adb_for_device(Some(&app), &device_id, &["shell", "getprop", prop])
             .unwrap_or_default()
@@ -54,10 +56,11 @@ pub fn get_device_info(app: tauri::AppHandle, device_id: String) -> Result<Devic
 ///
 /// Checks:
 /// 1. Device is authorized (USB debugging prompt accepted)
-/// 2. No existing device owner
-/// 3. No Google accounts on device (required for `dpm set-device-owner`)
+/// 2. SkywardBlocker is not already installed on the device
+/// 3. No existing device owner is active on the device
+/// 4. No Google accounts on device (required for `dpm set-device-owner`)
 #[tauri::command]
-pub fn check_prerequisites(
+pub async fn check_prerequisites(
     app: tauri::AppHandle,
     device_id: String,
 ) -> Result<PrerequisiteResult, String> {
@@ -74,7 +77,29 @@ pub fn check_prerequisites(
         messages.push("❌ USB debugging not authorized — accept the prompt on the phone".to_string());
     }
 
-    // 2. Check if there's already a device owner
+    // 2. Check if SkywardBlocker is already installed on the phone
+    let no_existing_install = if usb_authorized {
+        let output = adb::run_adb_for_device(
+            Some(&app),
+            &device_id,
+            &["shell", "pm", "list", "packages", "com.example.skywardblocker"],
+        )
+        .unwrap_or_default();
+
+        let is_installed = output.contains("com.example.skywardblocker");
+        if !is_installed {
+            messages.push("✅ SkywardBlocker is not currently installed on device".to_string());
+            true
+        } else {
+            messages.push("❌ SkywardBlocker is already installed on this phone — remove or factory reset before new setup".to_string());
+            false
+        }
+    } else {
+        messages.push("⏳ Cannot check existing installation (device not authorized)".to_string());
+        false
+    };
+
+    // 3. Check if there's already a device owner
     let no_existing_owner = if usb_authorized {
         let output = adb::run_adb_for_device(
             Some(&app),
@@ -83,20 +108,14 @@ pub fn check_prerequisites(
         )
         .unwrap_or_default();
 
-        // If "Device Owner" section exists with a non-empty admin, there's an existing owner
-        // But if it's OUR app, that's fine for re-installation
         let has_owner = output.contains("Device Owner:")
             && !output.contains("Device Owner: null");
-        let is_our_app = output.contains("com.example.skywardblocker");
 
         if !has_owner {
-            messages.push("✅ No existing device owner".to_string());
-            true
-        } else if is_our_app {
-            messages.push("✅ SkywardBlocker is already device owner".to_string());
+            messages.push("✅ No existing Device Owner active".to_string());
             true
         } else {
-            messages.push("❌ Another app is already device owner — factory reset required".to_string());
+            messages.push("❌ A Device Owner is already active on this device — factory reset required".to_string());
             false
         }
     } else {
@@ -104,7 +123,7 @@ pub fn check_prerequisites(
         false
     };
 
-    // 3. Check for Google accounts on device
+    // 4. Check for Google accounts on device
     let no_accounts = if usb_authorized {
         let output = adb::run_adb_for_device(
             Some(&app),
@@ -132,10 +151,11 @@ pub fn check_prerequisites(
         false
     };
 
-    let can_proceed = usb_authorized && no_existing_owner && no_accounts;
+    let can_proceed = usb_authorized && no_existing_install && no_existing_owner && no_accounts;
 
     Ok(PrerequisiteResult {
         usb_authorized,
+        no_existing_install,
         no_existing_owner,
         no_accounts,
         messages,

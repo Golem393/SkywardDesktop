@@ -8,7 +8,7 @@ pub const DEFAULT_DNS_HOSTNAME: &str = "1w2whn92y8e.dns.controld.com";
 /// Tauri command: Push runtime configuration (base_url, api_key, dns_hostname) to the installed Android app via ADB broadcast.
 /// If arguments are None or omitted by the frontend, defaults automatically to the central constants above.
 #[tauri::command]
-pub fn push_config(
+pub async fn push_config(
     app: AppHandle,
     device_id: String,
     base_url: Option<String>,

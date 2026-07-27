@@ -16,7 +16,7 @@ pub struct VerificationResult {
 /// Tauri command: Install an APK onto the target device.
 /// Uses `-t` flag to allow testOnly APKs (common during development).
 #[tauri::command]
-pub fn install_apk(
+pub async fn install_apk(
     app: tauri::AppHandle,
     device_id: String,
     apk_path: String,
@@ -37,7 +37,7 @@ pub fn install_apk(
 
 /// Tauri command: Set SkywardBlocker as the Device Owner via Device Policy Manager (DPM).
 #[tauri::command]
-pub fn set_device_owner(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
+pub async fn set_device_owner(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
     let output = adb::run_adb_for_device(
         Some(&app),
         &device_id,
@@ -56,7 +56,7 @@ pub fn set_device_owner(app: tauri::AppHandle, device_id: String) -> Result<Stri
 /// Tauri command: Send broadcast to clear Device Owner status (relinquish control for testing/uninstallation).
 /// Triggers AdbCommandReceiver in the Android app.
 #[tauri::command]
-pub fn clear_device_owner(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
+pub async fn clear_device_owner(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
     let output = adb::run_adb_for_device(
         Some(&app),
         &device_id,
@@ -78,9 +78,9 @@ pub fn clear_device_owner(app: tauri::AppHandle, device_id: String) -> Result<St
 /// Tauri command: Uninstall SkywardBlocker from the device.
 /// First sends the clear_device_owner broadcast, waits briefly, then uninstalls.
 #[tauri::command]
-pub fn uninstall_app(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
+pub async fn uninstall_app(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
     // 1. Try to clear device owner first so uninstallation isn't blocked by OS
-    let _ = clear_device_owner(app.clone(), device_id.clone());
+    let _ = clear_device_owner(app.clone(), device_id.clone()).await;
 
     // Give receiver a moment to process the clear command
     std::thread::sleep(std::time::Duration::from_millis(1000));
@@ -98,7 +98,7 @@ pub fn uninstall_app(app: tauri::AppHandle, device_id: String) -> Result<String,
 
 /// Tauri command: Verify that SkywardBlocker is both installed and set as Device Owner.
 #[tauri::command]
-pub fn verify_installation(
+pub async fn verify_installation(
     app: tauri::AppHandle,
     device_id: String,
 ) -> Result<VerificationResult, String> {
@@ -151,7 +151,7 @@ pub fn verify_installation(
 /// waking up all background services, DNS rules, and blocking protections automatically
 /// without requiring the user to tap the app icon on their phone.
 #[tauri::command]
-pub fn launch_app(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
+pub async fn launch_app(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
     let output = adb::run_adb_for_device(
         Some(&app),
         &device_id,

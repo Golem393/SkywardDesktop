@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface InstallStepProps {
@@ -7,25 +7,45 @@ interface InstallStepProps {
   onComplete: () => void;
 }
 
-type Phase = "prerequisites" | "installing" | "configuring" | "activating" | "done" | "error";
+type Phase = "prerequisites" | "installing" | "activating" | "configuring" | "done" | "error";
+
+interface PhaseError {
+  title: string;
+  message: string;
+  suggestion: string;
+}
+
+const ERROR_MAP: Record<string, PhaseError> = {
+  prereq_check: {
+    title: "Prerequisite Check Failed",
+    message: "Unable to verify device readiness.",
+    suggestion: "Ensure the device is connected via USB with USB debugging enabled, then try again.",
+  },
+  apk_install: {
+    title: "Installation Failed",
+    message: "The APK could not be installed on the device.",
+    suggestion: "Verify the APK file path is correct and the file exists. Make sure there is enough storage on the device.",
+  },
+  device_owner: {
+    title: "Activation Failed",
+    message: "Could not set SkywardBlocker as Device Owner.",
+    suggestion: "Ensure all Google accounts are removed from the device and no other Device Owner is active. Then factory‑reset the device and retry.",
+  },
+  verification: {
+    title: "Verification Failed",
+    message: "Installation completed but could not be verified.",
+    suggestion: "Open SkywardBlocker on the device manually to confirm it is running correctly.",
+  },
+};
 
 export default function InstallStep({ deviceId, deviceModel, onComplete }: InstallStepProps) {
   const [phase, setPhase] = useState<Phase>("prerequisites");
-  const [logs, setLogs] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [phaseError, setPhaseError] = useState<PhaseError | null>(null);
   const [apkPath, setApkPath] = useState("");
   const [prereqOk, setPrereqOk] = useState(false);
-  const logRef = useRef<HTMLPreElement>(null);
-
-  const log = (msg: string) => {
-    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
-  };
-
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [logs]);
+  const [prereqMessages, setPrereqMessages] = useState<{ ok: boolean; text: string }[]>([]);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [statusText, setStatusText] = useState("");
 
   // Auto-run prerequisites check
   useEffect(() => {
@@ -33,85 +53,104 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
   }, []);
 
   async function checkPrereqs() {
-    log("Checking device prerequisites…");
+    setPrereqOk(false);
+    setStatusText("Checking device prerequisites…");
+    setPrereqMessages([]);
+    setPhaseError(null);
+    await new Promise((resolve) => setTimeout(resolve, 50));
     try {
       const res = await invoke<{
         usb_authorized: boolean;
+        no_existing_install: boolean;
         no_existing_owner: boolean;
         no_accounts: boolean;
         messages: string[];
         can_proceed: boolean;
       }>("check_prerequisites", { deviceId });
 
-      res.messages.forEach((m) => log(`  ${m}`));
+      const parsed = res.messages.map((m) => ({
+        ok: m.startsWith("✅") || m.includes("✅"),
+        text: m.replace(/^[✅❌⏳✓✗⚠]\s*/, "").trim(),
+      }));
+      setPrereqMessages(parsed);
 
       if (res.can_proceed) {
-        log("✓ All prerequisites passed.");
         setPrereqOk(true);
+        setStatusText("");
       } else {
-        log("✗ Prerequisites not met. Please resolve the issues above.");
         setPrereqOk(false);
+        setStatusText("");
+        setPhaseError({
+          title: "Prerequisites Not Met",
+          message: "Your device does not meet the requirements for installation.",
+          suggestion: "Please resolve the issues listed above, then re‑check.",
+        });
       }
     } catch (err) {
-      log(`✗ Failed to check prerequisites: ${err}`);
       setPrereqOk(false);
+      setStatusText("");
+      setPhaseError({
+        ...ERROR_MAP.prereq_check,
+        message: `${ERROR_MAP.prereq_check.message} ${String(err)}`,
+      });
     }
   }
 
   async function startInstallation() {
+    if (isInstalling) return;
     if (!apkPath.trim()) {
-      setError("Please enter the path to the SkywardBlocker APK file.");
+      setPhaseError({
+        title: "Missing APK Path",
+        message: "No APK file path was provided.",
+        suggestion: "Enter the full path to your SkywardBlocker APK file before starting the installation.",
+      });
       return;
     }
-    setError(null);
-
-    // Phase 1: Install APK
+    setPhaseError(null);
+    setIsInstalling(true);
     setPhase("installing");
-    log("Installing SkywardBlocker APK…");
+    setStatusText("Installing SkywardBlocker on your device…");
+    await new Promise((resolve) => setTimeout(resolve, 50));
     try {
-      const res = await invoke<string>("install_apk", { deviceId, apkPath: apkPath.trim() });
-      log(`✓ ${res}`);
+      await invoke<string>("install_apk", { deviceId, apkPath: apkPath.trim() });
     } catch (err) {
-      log(`✗ Installation failed: ${err}`);
-      setError(String(err));
+      setPhaseError({ ...ERROR_MAP.apk_install, message: `${ERROR_MAP.apk_install.message} ${String(err)}` });
       setPhase("error");
+      setIsInstalling(false);
+      setStatusText("");
       return;
     }
 
     // Phase 2: Set Device Owner
     setPhase("activating");
-    log("Setting Device Owner…");
+    setStatusText("Activating Device Owner permissions…");
     try {
-      const res = await invoke<string>("set_device_owner", { deviceId });
-      log(`✓ ${res}`);
+      await invoke<string>("set_device_owner", { deviceId });
     } catch (err) {
-      log(`✗ Failed to set Device Owner: ${err}`);
-      setError(String(err));
+      setPhaseError({ ...ERROR_MAP.device_owner, message: `${ERROR_MAP.device_owner.message} ${String(err)}` });
       setPhase("error");
+      setIsInstalling(false);
+      setStatusText("");
       return;
     }
 
     // Phase 3: Push Configuration & Launch App
     setPhase("configuring");
-    log("Pushing runtime configuration…");
+    setStatusText("Configuring and launching SkywardBlocker…");
     try {
-      const res = await invoke<string>("push_config", { deviceId });
-      log(`✓ ${res}`);
-    } catch (err) {
-      log(`⚠ Config push warning: ${err}`);
+      await invoke<string>("push_config", { deviceId });
+    } catch {
       // Non-fatal — continue
     }
 
-    log("Launching app on device to complete automatic activation…");
     try {
-      const res = await invoke<string>("launch_app", { deviceId });
-      log(`✓ ${res}`);
-    } catch (err) {
-      log(`⚠ App launch warning: ${err}`);
+      await invoke<string>("launch_app", { deviceId });
+    } catch {
+      // Non-fatal — continue
     }
 
     // Phase 4: Verify
-    log("Verifying installation…");
+    setStatusText("Verifying installation…");
     try {
       const res = await invoke<{
         is_installed: boolean;
@@ -119,20 +158,22 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
         success: boolean;
         message: string;
       }>("verify_installation", { deviceId });
-      log(`✓ ${res.message}`);
 
       if (res.success) {
         setPhase("done");
-        log("🎉 Installation complete! SkywardBlocker is active.");
+        setStatusText("");
       } else {
-        log("⚠ Verification indicates incomplete setup.");
         setPhase("error");
-        setError("Installation completed but verification failed. The app may need manual configuration.");
+        setPhaseError(ERROR_MAP.verification);
+        setStatusText("");
       }
-    } catch (err) {
-      log(`⚠ Verification check failed: ${err}`);
-      setPhase("done"); // Still consider it done if previous steps passed
+    } catch {
+      // If verification itself fails but previous steps passed, consider it done
+      setPhase("done");
+      setStatusText("");
     }
+
+    setIsInstalling(false);
   }
 
   const phaseSteps = [
@@ -193,6 +234,69 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
             })}
           </div>
 
+          {/* Status text during installation */}
+          {statusText && (
+            <div className="install-status-banner" style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 16px",
+              background: "oklch(0.71 0.08 247 / 0.06)",
+              border: "1px solid oklch(0.71 0.08 247 / 0.15)",
+              borderRadius: "calc(var(--radius) - 2px)",
+              marginBottom: 16,
+              fontSize: 14,
+              color: "var(--foreground)",
+              animation: "fadeIn 0.3s ease-out both",
+            }}>
+              <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2, flexShrink: 0 }} />
+              {statusText}
+            </div>
+          )}
+
+          {/* Prerequisite results */}
+          {phase === "prerequisites" && prereqMessages.length > 0 && (
+            <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+              {prereqMessages.map((msg, i) => (
+                <div key={i} style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  fontSize: 14,
+                  borderRadius: "calc(var(--radius) - 2px)",
+                  background: msg.ok ? "oklch(0.60 0.15 150 / 0.06)" : "oklch(0.6 0.22 27 / 0.06)",
+                  border: `1px solid ${msg.ok ? "oklch(0.60 0.15 150 / 0.15)" : "oklch(0.6 0.22 27 / 0.15)"}`,
+                }}>
+                  {msg.ok ? (
+                    <div style={{
+                      width: 20, height: 20, borderRadius: "50%",
+                      background: "oklch(0.60 0.15 150 / 0.15)",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <div style={{
+                      width: 20, height: 20, borderRadius: "50%",
+                      background: "oklch(0.6 0.22 27 / 0.15)",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--destructive)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                    </div>
+                  )}
+                  <span style={{ color: "var(--foreground)", fontWeight: 500 }}>{msg.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* APK path input — only show during prerequisites phase */}
           {phase === "prerequisites" && (
             <div style={{ marginBottom: 16 }}>
@@ -212,33 +316,117 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
             </div>
           )}
 
-          {/* Error */}
-          {error && (
-            <div
-              style={{
-                background: "oklch(0.6 0.22 27 / 0.08)",
-                border: "1px solid oklch(0.6 0.22 27 / 0.2)",
-                borderRadius: "calc(var(--radius) - 2px)",
-                padding: "10px 14px",
+          {/* Error card */}
+          {phaseError && (
+            <div style={{
+              background: "oklch(0.6 0.22 27 / 0.05)",
+              border: "1px solid oklch(0.6 0.22 27 / 0.18)",
+              borderRadius: "var(--radius)",
+              padding: "16px 20px",
+              marginBottom: 16,
+              animation: "fadeInUp 0.35s ease-out both",
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 8,
+              }}>
+                <div style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: "oklch(0.6 0.22 27 / 0.12)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--destructive)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                </div>
+                <span style={{
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: "var(--destructive)",
+                }}>{phaseError.title}</span>
+              </div>
+              <p style={{
                 fontSize: 13,
-                color: "var(--destructive)",
-                marginBottom: 16,
-              }}
-            >
-              {error}
+                color: "var(--foreground)",
+                lineHeight: 1.5,
+                marginBottom: 6,
+                paddingLeft: 38,
+              }}>{phaseError.message}</p>
+              <p style={{
+                fontSize: 13,
+                color: "var(--muted-foreground)",
+                lineHeight: 1.5,
+                paddingLeft: 38,
+              }}>{phaseError.suggestion}</p>
+            </div>
+          )}
+
+          {/* Success card */}
+          {phase === "done" && (
+            <div style={{
+              background: "oklch(0.60 0.15 150 / 0.06)",
+              border: "1px solid oklch(0.60 0.15 150 / 0.2)",
+              borderRadius: "var(--radius)",
+              padding: "16px 20px",
+              marginBottom: 16,
+              animation: "fadeInUp 0.35s ease-out both",
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 6,
+              }}>
+                <div style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: "oklch(0.60 0.15 150 / 0.15)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                <span style={{
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: "var(--success)",
+                }}>Installation Complete</span>
+              </div>
+              <p style={{
+                fontSize: 13,
+                color: "var(--muted-foreground)",
+                lineHeight: 1.5,
+                paddingLeft: 38,
+              }}>SkywardBlocker has been installed and activated on your device. You can now proceed to the next step.</p>
             </div>
           )}
 
           {/* Action buttons */}
           <div className="flex gap-2">
-            {phase === "prerequisites" && (
+            {(phase === "prerequisites" || isInstalling) && (
               <>
-                <button className="btn btn-outline btn-sm" onClick={checkPrereqs}>
-                  Re-check
-                </button>
+                {phase === "prerequisites" && !isInstalling && (
+                  <button className="btn btn-outline btn-sm" onClick={checkPrereqs}>
+                    Re-check
+                  </button>
+                )}
                 <button
                   className="btn btn-primary"
-                  disabled={!prereqOk || !apkPath.trim()}
+                  disabled={!prereqOk || !apkPath.trim() || isInstalling}
                   onClick={startInstallation}
                 >
                   Start Installation
@@ -249,7 +437,7 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
               </>
             )}
             {phase === "error" && (
-              <button className="btn btn-outline" onClick={() => { setPhase("prerequisites"); setError(null); }}>
+              <button className="btn btn-outline" onClick={() => { setPhase("prerequisites"); setPhaseError(null); setIsInstalling(false); }}>
                 Retry
               </button>
             )}
@@ -264,22 +452,6 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
           </div>
         </div>
       </div>
-
-      {/* Activity Log */}
-      {logs.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title" style={{ fontSize: 13, color: "var(--muted-foreground)" }}>
-              Activity Log
-            </div>
-          </div>
-          <div className="card-content" style={{ paddingTop: 8 }}>
-            <pre className="log-box" ref={logRef}>
-              {logs.join("\n")}
-            </pre>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
