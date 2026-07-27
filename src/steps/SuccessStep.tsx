@@ -1,0 +1,106 @@
+interface SuccessStepProps {
+  deviceModel: string;
+  email: string;
+}
+
+export default function SuccessStep({ deviceModel, email }: SuccessStepProps) {
+  return (
+    <div className="space-y-4">
+      <div className="card">
+        <div className="card-header" style={{ textAlign: "center", paddingBottom: 0 }}>
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "oklch(0.60 0.15 150 / 0.12)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 16,
+            }}
+          >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}>
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+          <h2 className="card-title" style={{ fontSize: 22, textAlign: "center" }}>
+            Setup Complete
+          </h2>
+          <p className="card-description" style={{ textAlign: "center", maxWidth: 340, margin: "8px auto 0" }}>
+            SkywardBlocker has been installed and activated on <strong>{deviceModel}</strong>.
+          </p>
+        </div>
+        <div className="card-content" style={{ textAlign: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              maxWidth: 320,
+              margin: "0 auto",
+            }}
+          >
+            {/* Status items */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                borderRadius: "calc(var(--radius) - 2px)",
+                background: "var(--muted)",
+                fontSize: 14,
+              }}
+            >
+              <span className="status-dot connected" />
+              <span>Device Owner active</span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                borderRadius: "calc(var(--radius) - 2px)",
+                background: "var(--muted)",
+                fontSize: 14,
+              }}
+            >
+              <span className="status-dot connected" />
+              <span>Configuration pushed</span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                borderRadius: "calc(var(--radius) - 2px)",
+                background: "var(--muted)",
+                fontSize: 14,
+              }}
+            >
+              <span className="status-dot connected" />
+              <span>Blocking enabled</span>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <p className="text-sm text-muted" style={{ lineHeight: 1.6 }}>
+              You can safely disconnect the USB cable. The phone is now protected.
+              <br />
+              Manage your subscription at <span style={{ color: "var(--primary)", fontWeight: 500 }}>skywardos.com</span>
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs text-muted">
+              Logged in as <strong>{email}</strong>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
