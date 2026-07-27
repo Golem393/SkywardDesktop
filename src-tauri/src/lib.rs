@@ -2,6 +2,7 @@ mod adb;
 mod commands;
 
 use commands::auth::verify_subscription;
+use commands::config::push_config;
 use commands::device::{check_prerequisites, detect_devices, get_device_info};
 use commands::install::{
     clear_device_owner, install_apk, set_device_owner, uninstall_app, verify_installation,
@@ -20,7 +21,8 @@ pub fn run() {
             clear_device_owner,
             uninstall_app,
             verify_installation,
-            verify_subscription
+            verify_subscription,
+            push_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

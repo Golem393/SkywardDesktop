@@ -1,4 +1,4 @@
-use crate::adb::{self, AdbError};
+use crate::adb;
 
 const PACKAGE_NAME: &str = "com.example.skywardblocker";
 const DEVICE_ADMIN_COMPONENT: &str = "com.example.skywardblocker/.admin.SkywardDeviceAdmin";

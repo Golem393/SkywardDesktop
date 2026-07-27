@@ -1,4 +1,4 @@
-use crate::adb::{self, AdbError, Device};
+use crate::adb::{self, Device};
 
 /// Result of prerequisite checks on a connected device.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

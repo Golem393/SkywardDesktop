@@ -157,6 +157,17 @@ function App() {
     }
   }
 
+  async function handlePushConfig() {
+    if (!selectedSerial) return;
+    try {
+      log("Pushing runtime configuration via ADB broadcast...");
+      const res = await invoke<string>("push_config", { deviceId: selectedSerial });
+      log(`Success: ${res}`);
+    } catch (e) {
+      log(`Push Config Error: ${String(e)}`);
+    }
+  }
+
   async function testAuth() {
     if (!email || !password) {
       setAuthResult("Please enter email and password");
@@ -228,6 +239,7 @@ function App() {
             <button onClick={getInfo}>Get Device Info</button>
             <button onClick={checkPrereqs}>Check Prerequisites</button>
             <button onClick={testVerify}>Verify Installation</button>
+            <button onClick={handlePushConfig} style={{ borderColor: "#58a6ff", color: "#58a6ff" }}>Push Config (Phase 3.5)</button>
             <button onClick={handleSetOwner} style={{ borderColor: "#2ea043", color: "#3fb950" }}>Set Device Owner</button>
             <button onClick={handleClearOwner} style={{ borderColor: "#d29922", color: "#e3b341" }}>Clear Owner Broadcast</button>
             <button onClick={handleUninstall} style={{ borderColor: "#f85149", color: "#ff7b72" }}>Uninstall App</button>

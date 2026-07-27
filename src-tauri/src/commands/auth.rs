@@ -1,7 +1,5 @@
+use crate::commands::config::{DEFAULT_API_KEY, DEFAULT_BACKEND_URL};
 use serde::{Deserialize, Serialize};
-
-const DEFAULT_BACKEND_URL: &str = "https://mdm-backend-i4b0.onrender.com/api";
-const DEFAULT_API_KEY: &str = "api_3d9a7c1f5b824e9aa4d6f7c8b1e2a3d4";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthResponse {
