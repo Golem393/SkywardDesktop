@@ -1,49 +1,79 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+interface Device {
+  serial: string;
+  status: string;
+  model: string | null;
+  product: string | null;
+}
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+function App() {
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function scanDevices() {
+    setScanning(true);
+    setError(null);
+    try {
+      const result = await invoke<Device[]>("detect_devices");
+      setDevices(result);
+      if (result.length === 0) {
+        setError("No devices found. Make sure USB debugging is enabled and the phone is connected.");
+      }
+    } catch (e) {
+      setError(String(e));
+      setDevices([]);
+    } finally {
+      setScanning(false);
+    }
   }
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <h1>Skyward Installer</h1>
+      <p>Connect an Android device via USB and click scan.</p>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      <button onClick={scanDevices} disabled={scanning}>
+        {scanning ? "Scanning..." : "Scan for Devices"}
+      </button>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      {error && (
+        <p style={{ color: "#ff6b6b", marginTop: "1rem" }}>{error}</p>
+      )}
+
+      {devices.length > 0 && (
+        <div style={{ marginTop: "1rem" }}>
+          <h3>Connected Devices:</h3>
+          {devices.map((device) => (
+            <div
+              key={device.serial}
+              style={{
+                border: "1px solid #444",
+                borderRadius: "8px",
+                padding: "12px",
+                marginTop: "8px",
+              }}
+            >
+              <strong>{device.model || device.serial}</strong>
+              <br />
+              <small>
+                Serial: {device.serial} | Status:{" "}
+                <span
+                  style={{
+                    color: device.status === "device" ? "#51cf66" : "#ff6b6b",
+                  }}
+                >
+                  {device.status}
+                </span>
+                {device.product && ` | Product: ${device.product}`}
+              </small>
+            </div>
+          ))}
+        </div>
+      )}
     </main>
   );
 }
