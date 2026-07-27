@@ -1,19 +1,27 @@
 mod adb;
+mod commands;
 
-use adb::Device;
-
-/// Tauri command: detect all connected Android devices via ADB.
-/// Returns a list of devices with serial, status, model, and product info.
-#[tauri::command]
-fn detect_devices(app: tauri::AppHandle) -> Result<Vec<Device>, String> {
-    adb::detect_devices(Some(&app)).map_err(|e| e.to_string())
-}
+use commands::auth::verify_subscription;
+use commands::device::{check_prerequisites, detect_devices, get_device_info};
+use commands::install::{
+    clear_device_owner, install_apk, set_device_owner, uninstall_app, verify_installation,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_devices])
+        .invoke_handler(tauri::generate_handler![
+            detect_devices,
+            get_device_info,
+            check_prerequisites,
+            install_apk,
+            set_device_owner,
+            clear_device_owner,
+            uninstall_app,
+            verify_installation,
+            verify_subscription
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
