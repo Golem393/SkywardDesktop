@@ -78,18 +78,7 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
       return;
     }
 
-    // Phase 2: Push Configuration
-    setPhase("configuring");
-    log("Pushing runtime configuration…");
-    try {
-      const res = await invoke<string>("push_config", { deviceId });
-      log(`✓ ${res}`);
-    } catch (err) {
-      log(`⚠ Config push warning: ${err}`);
-      // Non-fatal — continue
-    }
-
-    // Phase 3: Set Device Owner
+    // Phase 2: Set Device Owner
     setPhase("activating");
     log("Setting Device Owner…");
     try {
@@ -100,6 +89,25 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
       setError(String(err));
       setPhase("error");
       return;
+    }
+
+    // Phase 3: Push Configuration & Launch App
+    setPhase("configuring");
+    log("Pushing runtime configuration…");
+    try {
+      const res = await invoke<string>("push_config", { deviceId });
+      log(`✓ ${res}`);
+    } catch (err) {
+      log(`⚠ Config push warning: ${err}`);
+      // Non-fatal — continue
+    }
+
+    log("Launching app on device to complete automatic activation…");
+    try {
+      const res = await invoke<string>("launch_app", { deviceId });
+      log(`✓ ${res}`);
+    } catch (err) {
+      log(`⚠ App launch warning: ${err}`);
     }
 
     // Phase 4: Verify
@@ -130,8 +138,8 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
   const phaseSteps = [
     { key: "prerequisites", label: "Check prerequisites" },
     { key: "installing", label: "Install APK" },
-    { key: "configuring", label: "Push configuration" },
     { key: "activating", label: "Activate Device Owner" },
+    { key: "configuring", label: "Configure & launch app" },
     { key: "done", label: "Complete" },
   ];
 

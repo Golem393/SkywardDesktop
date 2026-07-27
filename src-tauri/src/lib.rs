@@ -5,7 +5,7 @@ use commands::auth::verify_subscription;
 use commands::config::push_config;
 use commands::device::{check_prerequisites, detect_devices, get_device_info};
 use commands::install::{
-    clear_device_owner, install_apk, set_device_owner, uninstall_app, verify_installation,
+    clear_device_owner, install_apk, launch_app, set_device_owner, uninstall_app, verify_installation,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,7 +22,8 @@ pub fn run() {
             uninstall_app,
             verify_installation,
             verify_subscription,
-            push_config
+            push_config,
+            launch_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

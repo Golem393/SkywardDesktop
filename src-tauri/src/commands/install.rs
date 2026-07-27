@@ -145,3 +145,33 @@ pub fn verify_installation(
         message,
     })
 }
+
+/// Tauri command: Explicitly launch SkywardBlocker MainActivity over ADB.
+/// This brings the newly installed app out of Android's default "Stopped State",
+/// waking up all background services, DNS rules, and blocking protections automatically
+/// without requiring the user to tap the app icon on their phone.
+#[tauri::command]
+pub fn launch_app(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
+    let output = adb::run_adb_for_device(
+        Some(&app),
+        &device_id,
+        &[
+            "shell",
+            "am",
+            "start",
+            "-n",
+            &format!("{}/.MainActivity", PACKAGE_NAME),
+            "-a",
+            "android.intent.action.MAIN",
+            "-c",
+            "android.intent.category.LAUNCHER",
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    if output.contains("Error:") || output.contains("Exception") {
+        Err(format!("Failed to launch app: {}", output.trim()))
+    } else {
+        Ok("SkywardBlocker launched successfully and activated!".to_string())
+    }
+}
