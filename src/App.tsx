@@ -3,15 +3,18 @@ import "./App.css";
 
 import LoginStep from "./steps/LoginStep";
 import ConnectStep from "./steps/ConnectStep";
+import DashboardStep from "./steps/DashboardStep";
 import InstallStep from "./steps/InstallStep";
 import SuccessStep from "./steps/SuccessStep";
+import UpdateStep from "./steps/UpdateStep";
+import RemoveStep from "./steps/RemoveStep";
 
-type WizardStep = "login" | "connect" | "install" | "done";
+type WizardStep = "login" | "connect" | "dashboard" | "install" | "update" | "remove" | "done";
 
-const STEPS: { key: WizardStep; label: string; description: string }[] = [
+const STEPS = [
   { key: "connect", label: "Connect Device", description: "Plug in via USB" },
-  { key: "install", label: "Install & Configure", description: "APK + Device Owner" },
-  { key: "done", label: "Complete", description: "All set!" },
+  { key: "dashboard", label: "Device Dashboard", description: "Select management action" },
+  { key: "action", label: "Execute Action", description: "Install, Update, or Remove" },
 ];
 
 function App() {
@@ -30,7 +33,7 @@ function App() {
   const handleDeviceSelected = (serial: string, model: string) => {
     setDeviceId(serial);
     setDeviceModel(model);
-    setCurrentStep("install");
+    setCurrentStep("dashboard");
   };
 
   // ── Install complete handler ────────────────────────────
@@ -52,7 +55,14 @@ function App() {
   }
 
   // ── Dashboard Layout (Navbar + Sidebar + Content) ───────
-  const stepIndex = STEPS.findIndex((s) => s.key === currentStep);
+  const stepIndex =
+    currentStep === "connect"
+      ? 0
+      : currentStep === "dashboard"
+      ? 1
+      : currentStep === "done"
+      ? 2
+      : 2;
 
   return (
     <div className="app-shell">
@@ -125,16 +135,33 @@ function App() {
               <p className="label">
                 {currentStep === "done"
                   ? "Finished"
-                  : `Step ${stepIndex + 1} of ${STEPS.length}`}
+                  : currentStep === "dashboard"
+                  ? "Step 2 of 3"
+                  : currentStep === "connect"
+                  ? "Step 1 of 3"
+                  : "Step 3 of 3"}
               </p>
-              <h1>{STEPS[stepIndex]?.label || "Setup"}</h1>
+              <h1>
+                {currentStep === "connect" && "Connect Device"}
+                {currentStep === "dashboard" && "Device Dashboard"}
+                {currentStep === "install" && "Initial Setup"}
+                {currentStep === "update" && "Update Application"}
+                {currentStep === "remove" && "Remove Protection"}
+                {currentStep === "done" && "Complete"}
+              </h1>
               <p>
                 {currentStep === "connect" &&
                   "Connect your Android device to get started."}
+                {currentStep === "dashboard" &&
+                  "Choose a setup or lifecycle management operation."}
                 {currentStep === "install" &&
                   "Install the app and activate protection."}
+                {currentStep === "update" &&
+                  "Push an updated APK over USB connection."}
+                {currentStep === "remove" &&
+                  "Relinquish Device Owner status and remove application."}
                 {currentStep === "done" &&
-                  "Your device is now protected by Skyward."}
+                  "Your operation completed successfully."}
               </p>
             </div>
 
@@ -143,11 +170,36 @@ function App() {
               {currentStep === "connect" && (
                 <ConnectStep onDeviceSelected={handleDeviceSelected} />
               )}
+              {currentStep === "dashboard" && (
+                <DashboardStep
+                  deviceId={deviceId}
+                  deviceModel={deviceModel}
+                  onSelectInstall={() => setCurrentStep("install")}
+                  onSelectUpdate={() => setCurrentStep("update")}
+                  onSelectRemove={() => setCurrentStep("remove")}
+                />
+              )}
               {currentStep === "install" && (
                 <InstallStep
                   deviceId={deviceId}
                   deviceModel={deviceModel}
                   onComplete={handleInstallComplete}
+                />
+              )}
+              {currentStep === "update" && (
+                <UpdateStep
+                  deviceId={deviceId}
+                  deviceModel={deviceModel}
+                  onComplete={() => setCurrentStep("dashboard")}
+                  onCancel={() => setCurrentStep("dashboard")}
+                />
+              )}
+              {currentStep === "remove" && (
+                <RemoveStep
+                  deviceId={deviceId}
+                  deviceModel={deviceModel}
+                  onComplete={() => setCurrentStep("connect")}
+                  onCancel={() => setCurrentStep("dashboard")}
                 />
               )}
               {currentStep === "done" && (
