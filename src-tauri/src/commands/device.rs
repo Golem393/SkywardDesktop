@@ -17,6 +17,17 @@ pub struct PrerequisiteResult {
     pub can_proceed: bool,
 }
 
+/// Live connection state of a previously selected device.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeviceConnectionStatus {
+    /// True only when the device is present AND fully usable (`adb` status "device").
+    pub connected: bool,
+    /// Raw ADB status ("device", "unauthorized", "offline", …) or "disconnected" if absent.
+    pub status: String,
+    /// Human-readable explanation suitable for showing in a dialog.
+    pub message: String,
+}
+
 /// Basic device properties retrieved via `getprop`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceInfo {
@@ -31,6 +42,55 @@ pub struct DeviceInfo {
 #[tauri::command]
 pub async fn detect_devices(app: tauri::AppHandle) -> Result<Vec<Device>, String> {
     adb::detect_devices(Some(&app)).map_err(|e| e.to_string())
+}
+
+/// Tauri command: check whether a specific device is still connected and usable.
+///
+/// Called right before any destructive/long-running operation (install, update,
+/// remove) so the user gets a clear dialog instead of a cryptic ADB error when
+/// the cable was unplugged or the device dropped offline in the meantime.
+#[tauri::command]
+pub async fn is_device_connected(
+    app: tauri::AppHandle,
+    device_id: String,
+) -> Result<DeviceConnectionStatus, String> {
+    let devices = match adb::detect_devices(Some(&app)) {
+        Ok(devices) => devices,
+        Err(e) => {
+            // ADB itself is unavailable / failed — treat as not connected rather
+            // than letting the caller proceed into a doomed operation.
+            return Ok(DeviceConnectionStatus {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: format!("Could not reach ADB to verify the device: {}", e),
+            });
+        }
+    };
+
+    match devices.into_iter().find(|d| d.serial == device_id) {
+        Some(device) if device.status == "device" => Ok(DeviceConnectionStatus {
+            connected: true,
+            status: device.status,
+            message: "Device is connected and ready.".to_string(),
+        }),
+        Some(device) => {
+            let message = match device.status.as_str() {
+                "unauthorized" => "The device is plugged in but USB debugging has not been authorized. Accept the prompt on the phone and try again.".to_string(),
+                "offline" => "The device is plugged in but reported as offline. Reconnect the USB cable and try again.".to_string(),
+                other => format!("The device is in state \"{}\" and cannot be used right now.", other),
+            };
+            Ok(DeviceConnectionStatus {
+                connected: false,
+                status: device.status,
+                message,
+            })
+        }
+        None => Ok(DeviceConnectionStatus {
+            connected: false,
+            status: "disconnected".to_string(),
+            message: "The device is no longer connected. Reconnect it via USB and search for devices again.".to_string(),
+        }),
+    }
 }
 
 /// Tauri command: get detailed device info via `adb shell getprop`.

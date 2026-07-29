@@ -41,6 +41,13 @@ function App() {
     setCurrentStep("done");
   };
 
+  // ── Device lost handler — return to device search ───────
+  const handleBackToDevices = () => {
+    setDeviceId("");
+    setDeviceModel("");
+    setCurrentStep("connect");
+  };
+
   // ── Sign out handler ────────────────────────────────────
   const handleSignOut = () => {
     setEmail("");
@@ -184,6 +191,7 @@ function App() {
                   deviceId={deviceId}
                   deviceModel={deviceModel}
                   onComplete={handleInstallComplete}
+                  onBackToDevices={handleBackToDevices}
                 />
               )}
               {currentStep === "update" && (
@@ -192,6 +200,7 @@ function App() {
                   deviceModel={deviceModel}
                   onComplete={() => setCurrentStep("dashboard")}
                   onCancel={() => setCurrentStep("dashboard")}
+                  onBackToDevices={handleBackToDevices}
                 />
               )}
               {currentStep === "remove" && (
@@ -200,6 +209,7 @@ function App() {
                   deviceModel={deviceModel}
                   onComplete={() => setCurrentStep("connect")}
                   onCancel={() => setCurrentStep("dashboard")}
+                  onBackToDevices={handleBackToDevices}
                 />
               )}
               {currentStep === "done" && (

@@ -1,10 +1,15 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import DeviceDisconnectedModal, {
+  checkDeviceConnected,
+  DeviceConnectionStatus,
+} from "../components/DeviceDisconnectedModal";
 
 interface InstallStepProps {
   deviceId: string;
   deviceModel: string;
   onComplete: () => void;
+  onBackToDevices: () => void;
 }
 
 type Phase = "prerequisites" | "installing" | "activating" | "configuring" | "done" | "error";
@@ -38,7 +43,7 @@ const ERROR_MAP: Record<string, PhaseError> = {
   },
 };
 
-export default function InstallStep({ deviceId, deviceModel, onComplete }: InstallStepProps) {
+export default function InstallStep({ deviceId, deviceModel, onComplete, onBackToDevices }: InstallStepProps) {
   const [phase, setPhase] = useState<Phase>("prerequisites");
   const [phaseError, setPhaseError] = useState<PhaseError | null>(null);
   const [apkPath, setApkPath] = useState("");
@@ -46,11 +51,26 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
   const [prereqMessages, setPrereqMessages] = useState<{ ok: boolean; text: string }[]>([]);
   const [isInstalling, setIsInstalling] = useState(false);
   const [statusText, setStatusText] = useState("");
+  const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
 
   // Auto-run prerequisites check
   useEffect(() => {
     checkPrereqs();
   }, []);
+
+  /**
+   * Confirm the device is still connected before touching it.
+   * Returns false (and raises the disconnect dialog) when it is gone.
+   */
+  async function ensureConnected(): Promise<boolean> {
+    const status = await checkDeviceConnected(deviceId);
+    if (!status.connected) {
+      setDisconnected(status);
+      setStatusText("");
+      return false;
+    }
+    return true;
+  }
 
   async function checkPrereqs() {
     setPrereqOk(false);
@@ -58,6 +78,9 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
     setPrereqMessages([]);
     setPhaseError(null);
     await new Promise((resolve) => setTimeout(resolve, 50));
+
+    if (!(await ensureConnected())) return;
+
     try {
       const res = await invoke<{
         usb_authorized: boolean;
@@ -107,6 +130,10 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
       return;
     }
     setPhaseError(null);
+    setStatusText("Verifying device connection…");
+
+    if (!(await ensureConnected())) return;
+
     setIsInstalling(true);
     setPhase("installing");
     setStatusText("Installing SkywardBlocker on your device…");
@@ -452,6 +479,14 @@ export default function InstallStep({ deviceId, deviceModel, onComplete }: Insta
           </div>
         </div>
       </div>
+
+      {disconnected && (
+        <DeviceDisconnectedModal
+          status={disconnected}
+          onBackToDevices={onBackToDevices}
+          onClose={() => setDisconnected(null)}
+        />
+      )}
     </div>
   );
 }

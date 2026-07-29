@@ -1,26 +1,44 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import DeviceDisconnectedModal, {
+  checkDeviceConnected,
+  DeviceConnectionStatus,
+} from "../components/DeviceDisconnectedModal";
 
 interface UpdateStepProps {
   deviceId: string;
   deviceModel: string;
   onComplete: () => void;
   onCancel: () => void;
+  onBackToDevices: () => void;
 }
 
-export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel }: UpdateStepProps) {
+export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices }: UpdateStepProps) {
   const [apkPath, setApkPath] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
+  const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
 
   async function handleUpdateConfirm() {
     setShowWarningModal(false);
     setIsUpdating(true);
     setError(null);
     setSuccess(false);
+    setStatusText("Verifying device connection…");
+
+    // The device may have been unplugged (or dropped out of its 10-minute
+    // developer window) since it was selected — never push an APK blindly.
+    const connection = await checkDeviceConnected(deviceId);
+    if (!connection.connected) {
+      setDisconnected(connection);
+      setStatusText("");
+      setIsUpdating(false);
+      return;
+    }
+
     setStatusText("Pushing update APK to connected device…");
 
     try {
@@ -185,6 +203,14 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
             </div>
           </div>
         </div>
+      )}
+
+      {disconnected && (
+        <DeviceDisconnectedModal
+          status={disconnected}
+          onBackToDevices={onBackToDevices}
+          onClose={() => setDisconnected(null)}
+        />
       )}
     </div>
   );

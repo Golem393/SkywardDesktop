@@ -1,25 +1,43 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import DeviceDisconnectedModal, {
+  checkDeviceConnected,
+  DeviceConnectionStatus,
+} from "../components/DeviceDisconnectedModal";
 
 interface RemoveStepProps {
   deviceId: string;
   deviceModel: string;
   onComplete: () => void;
   onCancel: () => void;
+  onBackToDevices: () => void;
 }
 
-export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel }: RemoveStepProps) {
+export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices }: RemoveStepProps) {
   const [isRemoving, setIsRemoving] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
+  const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
 
   async function handleRemoveConfirm() {
     setShowWarningModal(false);
     setIsRemoving(true);
     setError(null);
     setSuccess(false);
+    setStatusText("Verifying device connection…");
+
+    // A half-executed removal (owner cleared, app left installed) is worse than
+    // no removal at all — confirm the device is still there first.
+    const connection = await checkDeviceConnected(deviceId);
+    if (!connection.connected) {
+      setDisconnected(connection);
+      setStatusText("");
+      setIsRemoving(false);
+      return;
+    }
+
     setStatusText("Releasing Device Owner privileges and uninstalling app…");
 
     try {
@@ -162,6 +180,14 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
             </div>
           </div>
         </div>
+      )}
+
+      {disconnected && (
+        <DeviceDisconnectedModal
+          status={disconnected}
+          onBackToDevices={onBackToDevices}
+          onClose={() => setDisconnected(null)}
+        />
       )}
     </div>
   );
