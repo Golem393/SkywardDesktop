@@ -191,6 +191,7 @@ function App() {
                   deviceId={deviceId}
                   deviceModel={deviceModel}
                   onComplete={handleInstallComplete}
+                  onCancel={() => setCurrentStep("dashboard")}
                   onBackToDevices={handleBackToDevices}
                 />
               )}

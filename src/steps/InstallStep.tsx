@@ -9,6 +9,7 @@ interface InstallStepProps {
   deviceId: string;
   deviceModel: string;
   onComplete: () => void;
+  onCancel: () => void;
   onBackToDevices: () => void;
 }
 
@@ -43,7 +44,7 @@ const ERROR_MAP: Record<string, PhaseError> = {
   },
 };
 
-export default function InstallStep({ deviceId, deviceModel, onComplete, onBackToDevices }: InstallStepProps) {
+export default function InstallStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices }: InstallStepProps) {
   const [phase, setPhase] = useState<Phase>("prerequisites");
   const [phaseError, setPhaseError] = useState<PhaseError | null>(null);
   const [apkPath, setApkPath] = useState("");
@@ -442,41 +443,46 @@ export default function InstallStep({ deviceId, deviceModel, onComplete, onBackT
             </div>
           )}
 
-          {/* Action buttons */}
-          <div className="flex gap-2">
-            {(phase === "prerequisites" || isInstalling) && (
-              <>
-                {phase === "prerequisites" && !isInstalling && (
-                  <button className="btn btn-outline btn-sm" onClick={checkPrereqs}>
-                    Re-check
-                  </button>
-                )}
-                <button
-                  className="btn btn-primary"
-                  disabled={!prereqOk || !apkPath.trim() || isInstalling}
-                  onClick={startInstallation}
-                >
-                  Start Installation
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <button className="btn btn-ghost" onClick={onCancel} disabled={isInstalling}>
+          Back to Dashboard
+        </button>
+        <div className="flex gap-2">
+          {(phase === "prerequisites" || isInstalling) && (
+            <>
+              {phase === "prerequisites" && !isInstalling && (
+                <button className="btn btn-outline" onClick={checkPrereqs}>
+                  Re-check
                 </button>
-              </>
-            )}
-            {phase === "error" && (
-              <button className="btn btn-outline" onClick={() => { setPhase("prerequisites"); setPhaseError(null); setIsInstalling(false); }}>
-                Retry
-              </button>
-            )}
-            {phase === "done" && (
-              <button className="btn btn-success" onClick={onComplete}>
-                Continue
+              )}
+              <button
+                className="btn btn-primary"
+                disabled={!prereqOk || !apkPath.trim() || isInstalling}
+                onClick={startInstallation}
+              >
+                Start Installation
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
-            )}
-          </div>
+            </>
+          )}
+          {phase === "error" && (
+            <button className="btn btn-outline" onClick={() => { setPhase("prerequisites"); setPhaseError(null); setIsInstalling(false); }}>
+              Retry
+            </button>
+          )}
+          {phase === "done" && (
+            <button className="btn btn-success" onClick={onComplete}>
+              Continue
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
