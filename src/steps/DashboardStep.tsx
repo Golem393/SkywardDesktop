@@ -4,6 +4,7 @@ interface DashboardStepProps {
   onSelectInstall: () => void;
   onSelectUpdate: () => void;
   onSelectRemove: () => void;
+  onBackToDevices: () => void;
 }
 
 export default function DashboardStep({
@@ -12,6 +13,7 @@ export default function DashboardStep({
   onSelectInstall,
   onSelectUpdate,
   onSelectRemove,
+  onBackToDevices,
 }: DashboardStepProps) {
   return (
     <div className="space-y-4">
@@ -105,6 +107,12 @@ export default function DashboardStep({
             </div>
           </div>
         </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-start" }}>
+        <button className="btn btn-ghost" onClick={onBackToDevices}>
+          Choose Another Device
+        </button>
       </div>
     </div>
   );

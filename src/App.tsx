@@ -184,6 +184,7 @@ function App() {
                   onSelectInstall={() => setCurrentStep("install")}
                   onSelectUpdate={() => setCurrentStep("update")}
                   onSelectRemove={() => setCurrentStep("remove")}
+                  onBackToDevices={handleBackToDevices}
                 />
               )}
               {currentStep === "install" && (
