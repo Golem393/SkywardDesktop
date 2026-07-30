@@ -45,107 +45,57 @@ pub struct Device {
 ///
 /// Resolution order:
 /// 1. Bundled binary in Tauri resources (for distribution)
-/// 2. Local project development resources (for `tauri dev`)
-/// 3. Common system directories (e.g. C:\platform-tools, Android SDK)
-/// 4. System PATH via `which`/`where`
+/// 2. System PATH (for development — uses your Android Studio adb)
 pub fn resolve_adb_path(app_handle: Option<&tauri::AppHandle>) -> Result<PathBuf, AdbError> {
-    let platform_dir = if cfg!(target_os = "linux") {
-        "platform-tools-linux"
-    } else if cfg!(target_os = "windows") {
-        "platform-tools-windows"
-    } else if cfg!(target_os = "macos") {
-        "platform-tools-macos"
-    } else {
-        "platform-tools-linux"
-    };
+    // 1. Try bundled binary from Tauri resources
+    if let Some(handle) = app_handle {
+        let platform_dir = if cfg!(target_os = "linux") {
+            "platform-tools-linux"
+        } else if cfg!(target_os = "windows") {
+            "platform-tools-windows"
+        } else if cfg!(target_os = "macos") {
+            "platform-tools-macos"
+        } else {
+            "platform-tools-linux"
+        };
 
+        let adb_name = if cfg!(target_os = "windows") {
+            "adb.exe"
+        } else {
+            "adb"
+        };
+
+        if let Ok(resource_dir) = handle.path().resource_dir() {
+            let bundled_path = resource_dir.join(platform_dir).join(adb_name);
+            if bundled_path.exists() {
+                return Ok(bundled_path);
+            }
+        }
+    }
+
+    // 2. Fall back to system PATH (development mode)
     let adb_name = if cfg!(target_os = "windows") {
         "adb.exe"
     } else {
         "adb"
     };
 
-    // 1. Try bundled binary from Tauri resources
-    if let Some(handle) = app_handle {
-        if let Ok(resource_dir) = handle.path().resource_dir() {
-            let bundled_path = resource_dir.join(platform_dir).join(adb_name);
-            eprintln!("[ADB Debug] Checking Tauri resource_dir: {}", bundled_path.display());
-            if bundled_path.exists() {
-                eprintln!("[ADB Debug] Found ADB at: {}", bundled_path.display());
-                return Ok(bundled_path);
-            }
-        }
-    }
-
-    // 2. Try local project resource folders (for `tauri dev` running from source)
-    let mut candidate_paths = vec![
-        PathBuf::from(format!("resources/{}/{}", platform_dir, adb_name)),
-        PathBuf::from(format!("src-tauri/resources/{}/{}", platform_dir, adb_name)),
-        PathBuf::from(format!("../src-tauri/resources/{}/{}", platform_dir, adb_name)),
-    ];
-
-    // Check relative to current executable in target/debug
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(parent) = exe_path.parent() {
-            // target/debug/../../src-tauri/resources/...
-            candidate_paths.push(parent.join("../../src-tauri/resources").join(platform_dir).join(adb_name));
-            // target/debug/resources/...
-            candidate_paths.push(parent.join("resources").join(platform_dir).join(adb_name));
-        }
-    }
-
-    // 3. Common standalone and Android SDK installation folders (especially useful on Windows/Mac)
-    if cfg!(target_os = "windows") {
-        candidate_paths.push(PathBuf::from(r#"C:\platform-tools\adb.exe"#));
-        candidate_paths.push(PathBuf::from(r#"C:\Android\platform-tools\adb.exe"#));
-        if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
-            candidate_paths.push(PathBuf::from(format!(r#"{}\Android\Sdk\platform-tools\adb.exe"#, appdata)));
-        }
-        if let Ok(userprofile) = std::env::var("USERPROFILE") {
-            candidate_paths.push(PathBuf::from(format!(r#"{}\AppData\Local\Android\Sdk\platform-tools\adb.exe"#, userprofile)));
-            candidate_paths.push(PathBuf::from(format!(r#"{}\Android\Sdk\platform-tools\adb.exe"#, userprofile)));
-        }
+    // Check if adb is on PATH by running `which adb` (or `where adb` on Windows)
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
     } else {
-        if let Ok(home) = std::env::var("HOME") {
-            candidate_paths.push(PathBuf::from(format!("{}/Library/Android/sdk/platform-tools/adb", home)));
-            candidate_paths.push(PathBuf::from(format!("{}/Android/Sdk/platform-tools/adb", home)));
-        }
-        candidate_paths.push(PathBuf::from("/usr/bin/adb"));
-        candidate_paths.push(PathBuf::from("/usr/local/bin/adb"));
-        candidate_paths.push(PathBuf::from("/opt/homebrew/bin/adb"));
-    }
-
-    for path in &candidate_paths {
-        if path.exists() {
-            eprintln!("[ADB Debug] Found ADB at fallback path: {}", path.display());
-            return Ok(path.clone());
-        }
-    }
-
-    // 4. Fall back to system PATH via `where` or `which`
-    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    eprintln!("[ADB Debug] Checking system PATH using '{} {}'", which_cmd, adb_name);
+        "which"
+    };
 
     match Command::new(which_cmd).arg(adb_name).output() {
         Ok(output) if output.status.success() => {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            // Importantly: take only the first line! On Windows `where` outputs all matches separated by newlines.
-            if let Some(first_line) = output_str.lines().next() {
-                let path = first_line.trim().to_string();
-                if !path.is_empty() {
-                    let pb = PathBuf::from(&path);
-                    eprintln!("[ADB Debug] Found ADB on system PATH: {}", pb.display());
-                    return Ok(pb);
-                }
-            }
-            Err(AdbError::NotFound("ADB command found on PATH but returned empty path string.".to_string()))
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Ok(PathBuf::from(path))
         }
-        _ => {
-            eprintln!("[ADB Debug] ADB binary could not be found anywhere!");
-            Err(AdbError::NotFound(
-                "ADB not found. Ensure adb is in C:\\platform-tools or on your system PATH.".to_string(),
-            ))
-        }
+        _ => Err(AdbError::NotFound(
+            "ADB not found. Install Android SDK platform-tools or ensure adb is on your PATH."
+                .to_string(),
+        )),
     }
 }
 
@@ -155,20 +105,14 @@ pub fn run_adb(
     args: &[&str],
 ) -> Result<String, AdbError> {
     let adb_path = resolve_adb_path(app_handle)?;
-    eprintln!("[ADB Debug] Executing: {} {}", adb_path.display(), args.join(" "));
 
     let output = Command::new(&adb_path)
         .args(args)
         .output()
-        .map_err(|e| {
-            let err_msg = format!("{}: {}", adb_path.display(), e);
-            eprintln!("[ADB Error] Execution failed: {}", err_msg);
-            AdbError::ExecutionFailed(err_msg)
-        })?;
+        .map_err(|e| AdbError::ExecutionFailed(format!("{}: {}", adb_path.display(), e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        eprintln!("[ADB Error] Command failed (code {}): {}", output.status.code().unwrap_or(-1), stderr.trim());
         return Err(AdbError::CommandFailed {
             code: output.status.code().unwrap_or(-1),
             stderr,

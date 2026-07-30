@@ -16,21 +16,17 @@ export default function ConnectStep({ onDeviceSelected }: ConnectStepProps) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [scanning, setScanning] = useState(false);
   const [selectedSerial, setSelectedSerial] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
 
   const scanDevices = useCallback(async () => {
     setScanning(true);
-    setScanError(null);
     try {
       const result = await invoke<Device[]>("detect_devices");
       setDevices(result);
       if (result.length === 1) {
         setSelectedSerial(result[0].serial);
       }
-    } catch (err) {
-      console.error("[ConnectStep] Device scan failed:", err);
+    } catch {
       setDevices([]);
-      setScanError(typeof err === "string" ? err : String(err));
     } finally {
       setScanning(false);
     }
@@ -107,15 +103,7 @@ export default function ConnectStep({ onDeviceSelected }: ConnectStepProps) {
             </div>
           )}
 
-          {!scanning && scanError && (
-            <div className="alert alert-error mt-4" style={{ textAlign: "left", padding: "16px", borderRadius: "8px" }}>
-              <p className="text-sm font-semibold">Could not detect devices via ADB:</p>
-              <p className="text-xs mt-1" style={{ wordBreak: "break-word", fontFamily: "monospace" }}>{scanError}</p>
-              <p className="text-xs mt-2 text-muted">Check terminal output for detailed ADB debug logs.</p>
-            </div>
-          )}
-
-          {!scanning && !scanError && devices.length === 0 && (
+          {!scanning && devices.length === 0 && (
             <div className="mt-4" style={{ textAlign: "center", padding: "24px 16px" }}>
               <p className="text-sm text-muted">No devices found.</p>
               <p className="text-xs text-muted mt-2">
