@@ -1,5 +1,6 @@
 use crate::adb::{self, Device};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::process::Command;
 
 /// Result of prerequisite checks on a connected device.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -12,7 +13,9 @@ pub struct PrerequisiteResult {
     pub no_existing_owner: bool,
     /// True if no Google accounts are present on the device (required for set-device-owner).
     pub no_accounts: bool,
-    /// Unique accounts found on the device, formatted as "name (type)".
+    /// Unique accounts found on the device, formatted with a friendly app
+    /// label where one could be resolved (e.g. "Instagram (user@example.com)"),
+    /// falling back to "name (type)" otherwise.
     pub accounts: Vec<String>,
     /// Human-readable messages for each check.
     pub messages: Vec<String>,
@@ -21,13 +24,13 @@ pub struct PrerequisiteResult {
 }
 
 /// Parses `dumpsys account` output into a deduplicated, sorted list of
-/// human-readable "name (type)" strings.
+/// (name, type) pairs.
 ///
 /// `dumpsys account` prints every account more than once — once in the
 /// top-level summary and again inside each per-user `UserAccounts` block —
 /// so naively counting `"Account {"` occurrences overcounts. This dedupes
 /// by (name, type) so each real account is only reported once.
-fn parse_unique_accounts(dumpsys_output: &str) -> Vec<String> {
+fn parse_unique_accounts(dumpsys_output: &str) -> Vec<(String, String)> {
     let mut seen = HashSet::new();
 
     for line in dumpsys_output.lines() {
@@ -51,13 +54,102 @@ fn parse_unique_accounts(dumpsys_output: &str) -> Vec<String> {
         }
 
         if let (Some(name), Some(account_type)) = (name, account_type) {
-            seen.insert(format!("{} ({})", name, account_type));
+            seen.insert((name.to_string(), account_type.to_string()));
         }
     }
 
-    let mut accounts: Vec<String> = seen.into_iter().collect();
+    let mut accounts: Vec<(String, String)> = seen.into_iter().collect();
     accounts.sort();
     accounts
+}
+
+/// Account types that are well-known enough to label without touching the
+/// device again — mostly system/OEM authenticators that either aren't a
+/// queryable app package (`com.google`) or are always present under the same
+/// name, so it's not worth a `pm path` + APK pull round-trip for them.
+const KNOWN_ACCOUNT_TYPES: &[(&str, &str)] = &[
+    ("com.google", "Google"),
+    ("com.google.android.gm.exchange", "Exchange (Gmail)"),
+    ("com.osp.app.signin", "Samsung account"),
+    ("com.samsung.android.mobileservice", "Samsung account"),
+    ("com.microsoft.workaccount", "Microsoft"),
+    ("com.microsoft.office.outlook", "Microsoft Outlook"),
+];
+
+/// Best-effort resolve of a friendly display name for an account's `type`
+/// (an authenticator package name, e.g. `com.instagram.android`).
+///
+/// Tries, in order: the static list of known system account types, then the
+/// installed app's real label pulled from its APK via `aapt`/`aapt2` (only
+/// possible if a local Android SDK is available), caching results in `cache`
+/// so repeated accounts of the same type don't re-pull the APK.
+fn resolve_account_type_label(
+    app: &tauri::AppHandle,
+    device_id: &str,
+    account_type: &str,
+    cache: &mut HashMap<String, Option<String>>,
+) -> Option<String> {
+    if let Some((_, label)) = KNOWN_ACCOUNT_TYPES.iter().find(|(t, _)| *t == account_type) {
+        return Some(label.to_string());
+    }
+
+    if let Some(cached) = cache.get(account_type) {
+        return cached.clone();
+    }
+
+    let label = fetch_installed_app_label(app, device_id, account_type);
+    cache.insert(account_type.to_string(), label.clone());
+    label
+}
+
+/// Pulls the APK for `package` off the device and reads its application
+/// label via `aapt`/`aapt2`. Returns `None` if no local SDK build-tools are
+/// available, the package isn't a real installed app, or anything in the
+/// pull/parse chain fails — callers should fall back to a generic display.
+fn fetch_installed_app_label(app: &tauri::AppHandle, device_id: &str, package: &str) -> Option<String> {
+    let aapt_path = adb::resolve_aapt_path()?;
+
+    let path_output = adb::run_adb_for_device(
+        Some(app),
+        device_id,
+        &["shell", "pm", "path", package],
+    )
+    .ok()?;
+    let remote_apk_path = path_output.lines().next()?.trim().strip_prefix("package:")?;
+
+    let local_apk_path = std::env::temp_dir().join(format!(
+        "skywardblocker_label_{}.apk",
+        package.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+    ));
+    let local_apk_str = local_apk_path.to_str()?;
+
+    adb::run_adb_for_device(Some(app), device_id, &["pull", remote_apk_path, local_apk_str]).ok()?;
+
+    let badging_output = Command::new(&aapt_path)
+        .args(["dump", "badging", local_apk_str])
+        .output()
+        .ok();
+
+    let _ = std::fs::remove_file(&local_apk_path);
+
+    let stdout = String::from_utf8_lossy(&badging_output?.stdout).to_string();
+    stdout.lines().find_map(|line| {
+        line.strip_prefix("application-label:'")
+            .and_then(|rest| rest.strip_suffix('\''))
+            .map(|label| label.to_string())
+    })
+}
+
+/// Builds the display string for one account, preferring a friendly app
+/// label with the account's own name/email attached, and falling back to the
+/// raw `name (type)` pair when no label could be resolved.
+fn format_account_display(name: &str, account_type: &str, label: Option<&str>) -> String {
+    let name_is_identifier = name.contains('@') || name.chars().any(|c| c.is_ascii_digit());
+    match label {
+        Some(label) if name_is_identifier => format!("{} ({})", label, name),
+        Some(label) => label.to_string(),
+        None => format!("{} ({})", name, account_type),
+    }
 }
 
 /// Live connection state of a previously selected device.
@@ -236,16 +328,24 @@ pub async fn check_prerequisites(
         .unwrap_or_default();
 
         // If there are accounts present, dpm set-device-owner will fail
-        let accounts = parse_unique_accounts(&output);
+        let raw_accounts = parse_unique_accounts(&output);
 
-        if accounts.is_empty() {
+        if raw_accounts.is_empty() {
             messages.push("✅ No accounts on device".to_string());
-            (true, accounts)
+            (true, Vec::new())
         } else {
             messages.push(format!(
                 "❌ {} account(s) found on device — remove all accounts before installation",
-                accounts.len()
+                raw_accounts.len()
             ));
+            let mut label_cache = HashMap::new();
+            let accounts: Vec<String> = raw_accounts
+                .iter()
+                .map(|(name, account_type)| {
+                    let label = resolve_account_type_label(&app, &device_id, account_type, &mut label_cache);
+                    format_account_display(name, account_type, label.as_deref())
+                })
+                .collect();
             for account in &accounts {
                 messages.push(format!("   • {}", account));
             }

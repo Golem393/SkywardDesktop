@@ -130,6 +130,68 @@ pub fn resolve_adb_path(app_handle: Option<&tauri::AppHandle>) -> Result<PathBuf
     ))
 }
 
+/// Resolve the path to an `aapt2`/`aapt` binary, used to read an installed
+/// app's display label out of its APK. Unlike `adb`, this is not bundled with
+/// the app — it's only used opportunistically (e.g. to show a friendly name
+/// for an on-device account) when a local Android SDK happens to be present,
+/// and callers must handle `None` by falling back to something else.
+///
+/// Resolution order:
+/// 1. `$ANDROID_HOME/build-tools/<latest>/{aapt2,aapt}`
+/// 2. `$ANDROID_SDK_ROOT/build-tools/<latest>/{aapt2,aapt}`
+/// 3. System PATH
+pub fn resolve_aapt_path() -> Option<PathBuf> {
+    let exe = |name: &str| {
+        if cfg!(target_os = "windows") {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        }
+    };
+
+    for sdk_root in [
+        std::env::var_os("ANDROID_HOME"),
+        std::env::var_os("ANDROID_SDK_ROOT"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let build_tools_dir = PathBuf::from(sdk_root).join("build-tools");
+        let Ok(entries) = std::fs::read_dir(&build_tools_dir) else {
+            continue;
+        };
+
+        let mut versions: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        versions.sort();
+        versions.reverse();
+
+        for version_dir in versions {
+            for name in ["aapt2", "aapt"] {
+                let candidate = version_dir.join(exe(name));
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    for name in ["aapt2", "aapt"] {
+        if let Ok(output) = Command::new(which_cmd).arg(&name).output() {
+            if output.status.success() {
+                if let Some(first_line) = String::from_utf8_lossy(&output.stdout).lines().next() {
+                    let path = PathBuf::from(first_line.trim());
+                    if !path.as_os_str().is_empty() {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Run an ADB command and return its stdout as a String.
 pub fn run_adb(
     app_handle: Option<&tauri::AppHandle>,
