@@ -215,7 +215,11 @@ function App() {
                 />
               )}
               {currentStep === "done" && (
-                <SuccessStep deviceModel={deviceModel} email={email} />
+                <SuccessStep
+                  deviceModel={deviceModel}
+                  email={email}
+                  onDone={() => setCurrentStep("dashboard")}
+                />
               )}
             </div>
           </main>

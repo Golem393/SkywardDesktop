@@ -1,9 +1,10 @@
 interface SuccessStepProps {
   deviceModel: string;
   email: string;
+  onDone: () => void;
 }
 
-export default function SuccessStep({ deviceModel, email }: SuccessStepProps) {
+export default function SuccessStep({ deviceModel, email, onDone }: SuccessStepProps) {
   return (
     <div className="space-y-4">
       <div className="card">
@@ -100,6 +101,15 @@ export default function SuccessStep({ deviceModel, email }: SuccessStepProps) {
             </p>
           </div>
         </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <button className="btn btn-primary" onClick={onDone}>
+          Back to Dashboard
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
       </div>
     </div>
   );
