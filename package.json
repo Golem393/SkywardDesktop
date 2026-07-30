@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/download-adb.mjs && vite",
+    "build": "node scripts/download-adb.mjs && tsc && vite build",
+    "setup:adb": "node scripts/download-adb.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -16,6 +17,7 @@
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
+    "adm-zip": "^0.5.16",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
