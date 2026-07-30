@@ -68,7 +68,7 @@ function App() {
       : currentStep === "dashboard"
       ? 1
       : currentStep === "done"
-      ? 2
+      ? 3
       : 2;
 
   return (
