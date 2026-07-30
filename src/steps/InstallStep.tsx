@@ -88,6 +88,7 @@ export default function InstallStep({ deviceId, deviceModel, onComplete, onCance
         no_existing_install: boolean;
         no_existing_owner: boolean;
         no_accounts: boolean;
+        accounts: string[];
         messages: string[];
         can_proceed: boolean;
       }>("check_prerequisites", { deviceId });

@@ -1,4 +1,5 @@
 use crate::adb::{self, Device};
+use std::collections::HashSet;
 
 /// Result of prerequisite checks on a connected device.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -11,10 +12,52 @@ pub struct PrerequisiteResult {
     pub no_existing_owner: bool,
     /// True if no Google accounts are present on the device (required for set-device-owner).
     pub no_accounts: bool,
+    /// Unique accounts found on the device, formatted as "name (type)".
+    pub accounts: Vec<String>,
     /// Human-readable messages for each check.
     pub messages: Vec<String>,
     /// True if all critical checks pass and installation can proceed.
     pub can_proceed: bool,
+}
+
+/// Parses `dumpsys account` output into a deduplicated, sorted list of
+/// human-readable "name (type)" strings.
+///
+/// `dumpsys account` prints every account more than once — once in the
+/// top-level summary and again inside each per-user `UserAccounts` block —
+/// so naively counting `"Account {"` occurrences overcounts. This dedupes
+/// by (name, type) so each real account is only reported once.
+fn parse_unique_accounts(dumpsys_output: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+
+    for line in dumpsys_output.lines() {
+        let line = line.trim();
+        let Some(inner) = line
+            .strip_prefix("Account {")
+            .and_then(|s| s.strip_suffix('}'))
+        else {
+            continue;
+        };
+
+        let mut name = None;
+        let mut account_type = None;
+        for field in inner.split(',') {
+            let field = field.trim();
+            if let Some(v) = field.strip_prefix("name=") {
+                name = Some(v.trim());
+            } else if let Some(v) = field.strip_prefix("type=") {
+                account_type = Some(v.trim());
+            }
+        }
+
+        if let (Some(name), Some(account_type)) = (name, account_type) {
+            seen.insert(format!("{} ({})", name, account_type));
+        }
+    }
+
+    let mut accounts: Vec<String> = seen.into_iter().collect();
+    accounts.sort();
+    accounts
 }
 
 /// Live connection state of a previously selected device.
@@ -184,7 +227,7 @@ pub async fn check_prerequisites(
     };
 
     // 4. Check for Google accounts on device
-    let no_accounts = if usb_authorized {
+    let (no_accounts, accounts) = if usb_authorized {
         let output = adb::run_adb_for_device(
             Some(&app),
             &device_id,
@@ -192,23 +235,25 @@ pub async fn check_prerequisites(
         )
         .unwrap_or_default();
 
-        // Count accounts — look for "Account {" entries
         // If there are accounts present, dpm set-device-owner will fail
-        let account_count = output.matches("Account {").count();
+        let accounts = parse_unique_accounts(&output);
 
-        if account_count == 0 {
+        if accounts.is_empty() {
             messages.push("✅ No accounts on device".to_string());
-            true
+            (true, accounts)
         } else {
             messages.push(format!(
                 "❌ {} account(s) found on device — remove all accounts before installation",
-                account_count
+                accounts.len()
             ));
-            false
+            for account in &accounts {
+                messages.push(format!("   • {}", account));
+            }
+            (false, accounts)
         }
     } else {
         messages.push("⏳ Cannot check accounts (device not authorized)".to_string());
-        false
+        (false, Vec::new())
     };
 
     let can_proceed = usb_authorized && no_existing_install && no_existing_owner && no_accounts;
@@ -218,6 +263,7 @@ pub async fn check_prerequisites(
         no_existing_install,
         no_existing_owner,
         no_accounts,
+        accounts,
         messages,
         can_proceed,
     })
