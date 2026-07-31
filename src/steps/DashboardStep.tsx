@@ -4,6 +4,7 @@ interface DashboardStepProps {
   onSelectInstall: () => void;
   onSelectUpdate: () => void;
   onSelectRemove: () => void;
+  onSelectEditSchedule: () => void;
   onBackToDevices: () => void;
 }
 
@@ -13,6 +14,7 @@ export default function DashboardStep({
   onSelectInstall,
   onSelectUpdate,
   onSelectRemove,
+  onSelectEditSchedule,
   onBackToDevices,
 }: DashboardStepProps) {
   return (
@@ -103,6 +105,31 @@ export default function DashboardStep({
                 }}
               >
                 Remove App
+              </button>
+            </div>
+
+            {/* Option 4: Adjust Locked Hours */}
+            <div
+              className="device-card"
+              style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 20, cursor: "pointer" }}
+              onClick={onSelectEditSchedule}
+            >
+              <div>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>🕒</div>
+                <div className="device-name" style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Adjust Locked Hours</div>
+                <div className="device-serial" style={{ fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.4 }}>
+                  Change the daily locked/unlocked time window. No reinstall required.
+                </div>
+              </div>
+              <button
+                className="btn btn-outline btn-sm mt-4"
+                style={{ width: "100%", marginTop: 16 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectEditSchedule();
+                }}
+              >
+                Edit Schedule
               </button>
             </div>
           </div>

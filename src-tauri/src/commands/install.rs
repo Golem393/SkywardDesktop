@@ -3,6 +3,7 @@ use crate::adb;
 const PACKAGE_NAME: &str = "com.example.skywardblocker";
 const DEVICE_ADMIN_COMPONENT: &str = "com.example.skywardblocker/.admin.SkywardDeviceAdmin";
 const CLEAR_OWNER_ACTION: &str = "com.example.skywardblocker.CLEAR_OWNER";
+const FINALIZE_SETUP_ACTION: &str = "com.example.skywardblocker.FINALIZE_SETUP";
 
 /// Result of installation verification.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -97,52 +98,28 @@ pub async fn uninstall_app(app: tauri::AppHandle, device_id: String) -> Result<S
 }
 
 /// Tauri command: Verify that SkywardBlocker is both installed and set as Device Owner.
+///
+/// USB debugging is intentionally left enabled by the app throughout provisioning (see
+/// `finalize_setup` below) specifically so this check — and push_config/push_schedule/
+/// launch_app — can rely on ADB staying connected. A disconnection here is a real problem,
+/// not an expected side effect to paper over.
 #[tauri::command]
 pub async fn verify_installation(
     app: tauri::AppHandle,
     device_id: String,
 ) -> Result<VerificationResult, String> {
-    let is_lockdown_disconnect = |text: &str| -> bool {
-        let t = text.to_lowercase();
-        t.contains("offline")
-            || t.contains("not found")
-            || t.contains("no devices")
-            || t.contains("unauthorized")
-            || t.contains("closed")
-    };
-
     // 1. Check if package is installed
-    let pm_res = adb::run_adb_for_device(
+    let pm_output = match adb::run_adb_for_device(
         Some(&app),
         &device_id,
         &["shell", "pm", "list", "packages", PACKAGE_NAME],
-    );
-
-    let pm_output = match pm_res {
-        Err(ref e) if is_lockdown_disconnect(&e.to_string()) => {
-            // If the device disconnected immediately after set_device_owner,
-            // our self-protection (DISALLOW_DEBUGGING_FEATURES) severed USB debugging as intended.
-            return Ok(VerificationResult {
-                is_installed: true,
-                is_device_owner: true,
-                success: true,
-                message: "SkywardBlocker is installed and actively running (USB debugging secured by lockdown).".to_string(),
-            });
-        }
+    ) {
         Err(e) => {
             return Ok(VerificationResult {
                 is_installed: false,
                 is_device_owner: false,
                 success: false,
                 message: format!("Verification failed: {}", e),
-            });
-        }
-        Ok(ref output) if is_lockdown_disconnect(output) => {
-            return Ok(VerificationResult {
-                is_installed: true,
-                is_device_owner: true,
-                success: true,
-                message: "SkywardBlocker is installed and actively running (USB debugging secured by lockdown).".to_string(),
             });
         }
         Ok(output) => output,
@@ -159,32 +136,12 @@ pub async fn verify_installation(
     }
 
     // 2. Check if package is device owner
-    let dpm_res = adb::run_adb_for_device(
+    let dpm_output = adb::run_adb_for_device(
         Some(&app),
         &device_id,
         &["shell", "dumpsys", "device_policy"],
-    );
-
-    let dpm_output = match dpm_res {
-        Err(ref e) if is_lockdown_disconnect(&e.to_string()) => {
-            return Ok(VerificationResult {
-                is_installed: true,
-                is_device_owner: true,
-                success: true,
-                message: "SkywardBlocker is installed and actively running (USB debugging secured by lockdown).".to_string(),
-            });
-        }
-        Err(_) => "".to_string(),
-        Ok(ref output) if is_lockdown_disconnect(output) => {
-            return Ok(VerificationResult {
-                is_installed: true,
-                is_device_owner: true,
-                success: true,
-                message: "SkywardBlocker is installed and actively running (USB debugging secured by lockdown).".to_string(),
-            });
-        }
-        Ok(output) => output,
-    };
+    )
+    .unwrap_or_default();
 
     let is_device_owner = dpm_output.contains(DEVICE_ADMIN_COMPONENT)
         || (dpm_output.contains("Device Owner:") && dpm_output.contains(PACKAGE_NAME));
@@ -202,6 +159,29 @@ pub async fn verify_installation(
         success,
         message,
     })
+}
+
+/// Tauri command: Seal USB debugging once config/schedule have been pushed and the app
+/// launched. The app itself leaves debugging enabled until this broadcast arrives —
+/// see `DevicePolicyHelper.finalizeProvisioning()` on the Android side.
+#[tauri::command]
+pub async fn finalize_setup(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
+    let output = adb::run_adb_for_device(
+        Some(&app),
+        &device_id,
+        &[
+            "shell",
+            "am",
+            "broadcast",
+            "-a",
+            FINALIZE_SETUP_ACTION,
+            "-n",
+            &format!("{}/.receiver.AdbCommandReceiver", PACKAGE_NAME),
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(format!("Setup finalized: {}", output.trim()))
 }
 
 /// Tauri command: Explicitly launch SkywardBlocker MainActivity over ADB.

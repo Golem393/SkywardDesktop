@@ -4,10 +4,12 @@ import DeviceDisconnectedModal, {
   checkDeviceConnected,
   DeviceConnectionStatus,
 } from "../components/DeviceDisconnectedModal";
+import { ScheduleConfig } from "./ScheduleStep";
 
 interface InstallStepProps {
   deviceId: string;
   deviceModel: string;
+  scheduleConfig: ScheduleConfig;
   onComplete: () => void;
   onCancel: () => void;
   onBackToDevices: () => void;
@@ -19,6 +21,13 @@ interface PhaseError {
   title: string;
   message: string;
   suggestion: string;
+}
+
+interface VerificationResult {
+  is_installed: boolean;
+  is_device_owner: boolean;
+  success: boolean;
+  message: string;
 }
 
 const ERROR_MAP: Record<string, PhaseError> = {
@@ -44,7 +53,7 @@ const ERROR_MAP: Record<string, PhaseError> = {
   },
 };
 
-export default function InstallStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices }: InstallStepProps) {
+export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onComplete, onCancel, onBackToDevices }: InstallStepProps) {
   const [phase, setPhase] = useState<Phase>("prerequisites");
   const [phaseError, setPhaseError] = useState<PhaseError | null>(null);
   const [apkPath, setApkPath] = useState("");
@@ -53,6 +62,7 @@ export default function InstallStep({ deviceId, deviceModel, onComplete, onCance
   const [isInstalling, setIsInstalling] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
+  const [scheduleWarning, setScheduleWarning] = useState<string | null>(null);
 
   // Auto-run prerequisites check
   useEffect(() => {
@@ -163,7 +173,29 @@ export default function InstallStep({ deviceId, deviceModel, onComplete, onCance
       return;
     }
 
-    // Phase 3: Push Configuration & Launch App
+    // Confirm Device Owner activation actually took effect over ADB before spending
+    // time pushing config/schedule. USB debugging is intentionally left enabled by the
+    // app until finalize_setup runs at the very end of this flow, so a real failure here
+    // means activation genuinely didn't work — not an expected disconnect to work around.
+    setStatusText("Confirming Device Owner activation…");
+    try {
+      const check = await invoke<VerificationResult>("verify_installation", { deviceId });
+      if (!check.is_installed || !check.is_device_owner) {
+        setPhaseError({ ...ERROR_MAP.device_owner, message: check.message });
+        setPhase("error");
+        setIsInstalling(false);
+        setStatusText("");
+        return;
+      }
+    } catch (err) {
+      setPhaseError({ ...ERROR_MAP.device_owner, message: `${ERROR_MAP.device_owner.message} ${String(err)}` });
+      setPhase("error");
+      setIsInstalling(false);
+      setStatusText("");
+      return;
+    }
+
+    // Phase 3: Push Configuration & Schedule
     setPhase("configuring");
     setStatusText("Configuring and launching SkywardBlocker…");
     try {
@@ -172,23 +204,54 @@ export default function InstallStep({ deviceId, deviceModel, onComplete, onCance
       // Non-fatal — continue
     }
 
+    setScheduleWarning(null);
+    let scheduleError: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await invoke<string>("push_schedule", {
+          deviceId,
+          lockStartHour: scheduleConfig.lockStartHour,
+          lockStartMinute: scheduleConfig.lockStartMinute,
+          lockEndHour: scheduleConfig.lockEndHour,
+          lockEndMinute: scheduleConfig.lockEndMinute,
+          timezoneId: scheduleConfig.timezoneId,
+        });
+        scheduleError = null;
+        break;
+      } catch (err) {
+        scheduleError = err;
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+    if (scheduleError) {
+      // Non-fatal to the overall install (device is still protected), but the parent
+      // needs to know the schedule specifically didn't land — surfaced in the success
+      // card below rather than silently swallowed.
+      setScheduleWarning(
+        `The locked-hours schedule could not be applied (${String(scheduleError)}). ` +
+          `Use "Adjust Locked Hours" from the dashboard afterward to set it.`
+      );
+    }
+
     try {
       await invoke<string>("launch_app", { deviceId });
     } catch {
       // Non-fatal — continue
     }
 
-    // Phase 4: Verify
+    // Phase 4: Verify, then seal USB debugging now that config/schedule/launch are done
     setStatusText("Verifying installation…");
     try {
-      const res = await invoke<{
-        is_installed: boolean;
-        is_device_owner: boolean;
-        success: boolean;
-        message: string;
-      }>("verify_installation", { deviceId });
+      const res = await invoke<VerificationResult>("verify_installation", { deviceId });
 
       if (res.success) {
+        setStatusText("Finalizing setup…");
+        try {
+          await invoke<string>("finalize_setup", { deviceId });
+        } catch {
+          // Non-fatal — the app still works, just retry "Adjust Locked Hours" later if
+          // USB debugging somehow needs to be sealed again.
+        }
         setPhase("done");
         setStatusText("");
       } else {
@@ -197,7 +260,13 @@ export default function InstallStep({ deviceId, deviceModel, onComplete, onCance
         setStatusText("");
       }
     } catch {
-      // If verification itself fails but previous steps passed, consider it done
+      // If verification itself fails but previous steps passed, consider it done.
+      // Still attempt to finalize — device is provisioned either way.
+      try {
+        await invoke<string>("finalize_setup", { deviceId });
+      } catch {
+        // Non-fatal
+      }
       setPhase("done");
       setStatusText("");
     }
@@ -441,6 +510,22 @@ export default function InstallStep({ deviceId, deviceModel, onComplete, onCance
                 lineHeight: 1.5,
                 paddingLeft: 38,
               }}>SkywardBlocker has been installed and activated on your device. You can now proceed to the next step.</p>
+            </div>
+          )}
+
+          {/* Schedule push warning — installation still succeeded, but the schedule didn't land */}
+          {phase === "done" && scheduleWarning && (
+            <div style={{
+              background: "oklch(0.75 0.15 85 / 0.08)",
+              border: "1px solid oklch(0.75 0.15 85 / 0.3)",
+              borderRadius: "var(--radius)",
+              padding: "16px 20px",
+              marginBottom: 16,
+              animation: "fadeInUp 0.35s ease-out both",
+            }}>
+              <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0, lineHeight: 1.5 }}>
+                ⚠️ {scheduleWarning}
+              </p>
             </div>
           )}
 

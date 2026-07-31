@@ -4,12 +4,13 @@ import "./App.css";
 import LoginStep from "./steps/LoginStep";
 import ConnectStep from "./steps/ConnectStep";
 import DashboardStep from "./steps/DashboardStep";
+import ScheduleStep, { ScheduleConfig } from "./steps/ScheduleStep";
 import InstallStep from "./steps/InstallStep";
 import SuccessStep from "./steps/SuccessStep";
 import UpdateStep from "./steps/UpdateStep";
 import RemoveStep from "./steps/RemoveStep";
 
-type WizardStep = "login" | "connect" | "dashboard" | "install" | "update" | "remove" | "done";
+type WizardStep = "login" | "connect" | "dashboard" | "schedule" | "install" | "editSchedule" | "update" | "remove" | "done";
 
 const STEPS = [
   { key: "connect", label: "Connect Device", description: "Plug in via USB" },
@@ -22,6 +23,7 @@ function App() {
   const [email, setEmail] = useState("");
   const [deviceId, setDeviceId] = useState("");
   const [deviceModel, setDeviceModel] = useState("");
+  const [pendingSchedule, setPendingSchedule] = useState<ScheduleConfig | null>(null);
 
   // ── Login handler ───────────────────────────────────────
   const handleLogin = (userEmail: string) => {
@@ -151,7 +153,9 @@ function App() {
               <h1>
                 {currentStep === "connect" && "Connect Device"}
                 {currentStep === "dashboard" && "Device Dashboard"}
+                {currentStep === "schedule" && "Set Locked Hours"}
                 {currentStep === "install" && "Initial Setup"}
+                {currentStep === "editSchedule" && "Adjust Locked Hours"}
                 {currentStep === "update" && "Update Application"}
                 {currentStep === "remove" && "Remove Protection"}
                 {currentStep === "done" && "Complete"}
@@ -161,8 +165,12 @@ function App() {
                   "Connect your Android device to get started."}
                 {currentStep === "dashboard" &&
                   "Choose a setup or lifecycle management operation."}
+                {currentStep === "schedule" &&
+                  "Choose when the device should be locked down each day."}
                 {currentStep === "install" &&
                   "Install the app and activate protection."}
+                {currentStep === "editSchedule" &&
+                  "Change the daily locked/unlocked time window."}
                 {currentStep === "update" &&
                   "Push an updated APK over USB connection."}
                 {currentStep === "remove" &&
@@ -181,17 +189,42 @@ function App() {
                 <DashboardStep
                   deviceId={deviceId}
                   deviceModel={deviceModel}
-                  onSelectInstall={() => setCurrentStep("install")}
+                  onSelectInstall={() => setCurrentStep("schedule")}
                   onSelectUpdate={() => setCurrentStep("update")}
                   onSelectRemove={() => setCurrentStep("remove")}
+                  onSelectEditSchedule={() => setCurrentStep("editSchedule")}
                   onBackToDevices={handleBackToDevices}
                 />
               )}
-              {currentStep === "install" && (
+              {currentStep === "schedule" && (
+                <ScheduleStep
+                  deviceId={deviceId}
+                  deviceModel={deviceModel}
+                  mode="initial"
+                  onContinue={(config) => {
+                    setPendingSchedule(config);
+                    setCurrentStep("install");
+                  }}
+                  onCancel={() => setCurrentStep("dashboard")}
+                  onBackToDevices={handleBackToDevices}
+                />
+              )}
+              {currentStep === "install" && pendingSchedule && (
                 <InstallStep
                   deviceId={deviceId}
                   deviceModel={deviceModel}
+                  scheduleConfig={pendingSchedule}
                   onComplete={handleInstallComplete}
+                  onCancel={() => setCurrentStep("schedule")}
+                  onBackToDevices={handleBackToDevices}
+                />
+              )}
+              {currentStep === "editSchedule" && (
+                <ScheduleStep
+                  deviceId={deviceId}
+                  deviceModel={deviceModel}
+                  mode="edit"
+                  onContinue={() => setCurrentStep("dashboard")}
                   onCancel={() => setCurrentStep("dashboard")}
                   onBackToDevices={handleBackToDevices}
                 />
