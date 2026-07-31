@@ -184,7 +184,6 @@ export default function ScheduleStep({
         timezoneId: config.timezoneId,
       });
       setSuccess(true);
-      onContinue(config);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -343,15 +342,21 @@ export default function ScheduleStep({
 
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <button className="btn btn-ghost" onClick={onCancel} disabled={isSaving}>
-          {mode === "initial" ? "Back to Dashboard" : "Cancel"}
+          {mode === "initial" ? "Back to Dashboard" : success ? "Close" : "Cancel"}
         </button>
-        <button
-          className="btn btn-primary"
-          onClick={handleContinue}
-          disabled={isSaving || !selectedId}
-        >
-          {isSaving ? "Saving…" : mode === "initial" ? "Continue" : "Save Schedule"}
-        </button>
+        {mode === "edit" && success ? (
+          <button className="btn btn-success" onClick={() => onContinue(pendingConfig as ScheduleConfig)}>
+            Done
+          </button>
+        ) : (
+          <button
+            className="btn btn-primary"
+            onClick={handleContinue}
+            disabled={isSaving || !selectedId}
+          >
+            {isSaving ? "Saving…" : mode === "initial" ? "Continue" : "Save Schedule"}
+          </button>
+        )}
       </div>
 
       {/* Warning Modal */}
