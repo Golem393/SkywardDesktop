@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { setAccessToken } from "../lib/api";
 
 interface AuthResponse {
   success: boolean;
   errorMessage: string | null;
+  accessToken: string | null;
 }
 
 interface LoginStepProps {
@@ -26,6 +28,8 @@ export default function LoginStep({ onLogin }: LoginStepProps) {
     try {
       const res = await invoke<AuthResponse>("verify_subscription", { email, password });
       if (res.success) {
+        // The session token authenticates every subsequent schedule/device call.
+        setAccessToken(res.accessToken ?? null);
         onLogin(email);
       } else {
         setError(res.errorMessage || "Authentication failed. Please check your credentials.");

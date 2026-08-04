@@ -1,81 +1,95 @@
-import { useState } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import "./App.css";
 
 import LoginStep from "./steps/LoginStep";
-import ConnectStep from "./steps/ConnectStep";
-import DashboardStep from "./steps/DashboardStep";
-import ScheduleStep, { ScheduleConfig } from "./steps/ScheduleStep";
-import InstallStep from "./steps/InstallStep";
-import SuccessStep from "./steps/SuccessStep";
-import UpdateStep from "./steps/UpdateStep";
-import RemoveStep from "./steps/RemoveStep";
+import HomePage from "./pages/HomePage";
+import DevicesPage from "./pages/DevicesPage";
+import { fetchMe, Me, setAccessToken } from "./lib/api";
 
-type WizardStep = "login" | "connect" | "dashboard" | "schedule" | "install" | "editSchedule" | "update" | "remove" | "done";
+type Route = "home" | "devices";
 
-const STEPS = [
-  { key: "connect", label: "Connect Device", description: "Plug in via USB" },
-  { key: "dashboard", label: "Device Dashboard", description: "Select management action" },
-  { key: "action", label: "Execute Action", description: "Install, Update, or Remove" },
+const NAV: { key: Route; label: string; icon: ReactNode }[] = [
+  {
+    key: "home",
+    label: "Home",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
+      </svg>
+    ),
+  },
+  {
+    key: "devices",
+    label: "Devices",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+        <line x1="12" y1="18" x2="12.01" y2="18" />
+      </svg>
+    ),
+  },
 ];
 
-function App() {
-  const [currentStep, setCurrentStep] = useState<WizardStep>("login");
-  const [email, setEmail] = useState("");
-  const [deviceId, setDeviceId] = useState("");
-  const [deviceModel, setDeviceModel] = useState("");
-  const [pendingSchedule, setPendingSchedule] = useState<ScheduleConfig | null>(null);
+const PAGE_COPY: Record<Route, { title: string; subtitle: string }> = {
+  home: {
+    title: "Home",
+    subtitle: "Your blocking schedule and where it stands.",
+  },
+  devices: {
+    title: "Devices",
+    subtitle: "Set up and manage the phone Skyward protects.",
+  },
+};
 
-  // ── Login handler ───────────────────────────────────────
+function App() {
+  const [email, setEmail] = useState("");
+  const [signedIn, setSignedIn] = useState(false);
+  const [route, setRoute] = useState<Route>("home");
+
+  const [me, setMe] = useState<Me | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  /** Re-read the account record. Every mutation funnels through this so Home and Devices
+   *  never drift from what the backend actually holds. */
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      setMe(await fetchMe());
+    } catch (err) {
+      setLoadError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (signedIn) refresh();
+  }, [signedIn, refresh]);
+
   const handleLogin = (userEmail: string) => {
     setEmail(userEmail);
-    setCurrentStep("connect");
+    setSignedIn(true);
+    setRoute("home");
   };
 
-  // ── Device selected handler ─────────────────────────────
-  const handleDeviceSelected = (serial: string, model: string) => {
-    setDeviceId(serial);
-    setDeviceModel(model);
-    setCurrentStep("dashboard");
-  };
-
-  // ── Install complete handler ────────────────────────────
-  const handleInstallComplete = () => {
-    setCurrentStep("done");
-  };
-
-  // ── Device lost handler — return to device search ───────
-  const handleBackToDevices = () => {
-    setDeviceId("");
-    setDeviceModel("");
-    setCurrentStep("connect");
-  };
-
-  // ── Sign out handler ────────────────────────────────────
   const handleSignOut = () => {
+    setAccessToken(null);
     setEmail("");
-    setDeviceId("");
-    setDeviceModel("");
-    setCurrentStep("login");
+    setSignedIn(false);
+    setMe(null);
+    setLoadError(null);
+    setRoute("home");
   };
 
-  // ── Login Screen (Full page, no sidebar) ────────────────
-  if (currentStep === "login") {
+  if (!signedIn) {
     return <LoginStep onLogin={handleLogin} />;
   }
 
-  // ── Dashboard Layout (Navbar + Sidebar + Content) ───────
-  const stepIndex =
-    currentStep === "connect"
-      ? 0
-      : currentStep === "dashboard"
-      ? 1
-      : currentStep === "done"
-      ? 3
-      : 2;
-
   return (
     <div className="app-shell">
-      {/* Navbar */}
       <nav className="navbar">
         <div className="navbar-brand">
           <svg className="navbar-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -87,172 +101,68 @@ function App() {
         </div>
         <div className="navbar-right">
           <span className="navbar-email">{email}</span>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={refresh}
+            disabled={loading}
+            title="Re-fetch your schedule and device from the server"
+          >
+            {loading ? (
+              <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            )}
+            Refresh
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={handleSignOut}>
             Sign out
           </button>
         </div>
       </nav>
 
-      {/* Dashboard Grid */}
       <div className="page-container wide">
         <div className="dashboard-grid">
-          {/* Sidebar Stepper */}
           <aside className="sidebar">
-            <p
-              style={{
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: "0.2em",
-                color: "var(--muted-foreground)",
-                marginBottom: 16,
-              }}
-            >
-              Setup Steps
-            </p>
-            <div className="stepper">
-              {STEPS.map((step, i) => {
-                let bulletClass = "pending";
-                if (i < stepIndex) bulletClass = "done";
-                else if (i === stepIndex) bulletClass = "active";
-
-                return (
-                  <div className="stepper-item" key={step.key}>
-                    <div className={`stepper-bullet ${bulletClass}`}>
-                      {bulletClass === "done" ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      ) : (
-                        i + 1
-                      )}
-                    </div>
-                    <div className="stepper-content">
-                      <div className={`stepper-label ${bulletClass === "pending" ? "muted" : ""}`}>
-                        {step.label}
-                      </div>
-                      <div className="stepper-sublabel">{step.description}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <nav className="sidebar-nav">
+              {NAV.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`nav-item ${route === item.key ? "active" : ""}`}
+                  onClick={() => setRoute(item.key)}
+                  aria-current={route === item.key ? "page" : undefined}
+                >
+                  <span className="nav-item-icon">{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
+            </nav>
           </aside>
 
-          {/* Main Content */}
           <main className="main-content">
             <div className="page-header">
-              <p className="label">
-                {currentStep === "done"
-                  ? "Finished"
-                  : currentStep === "dashboard"
-                  ? "Step 2 of 3"
-                  : currentStep === "connect"
-                  ? "Step 1 of 3"
-                  : "Step 3 of 3"}
-              </p>
-              <h1>
-                {currentStep === "connect" && "Connect Device"}
-                {currentStep === "dashboard" && "Device Dashboard"}
-                {currentStep === "schedule" && "Set Locked Hours"}
-                {currentStep === "install" && "Initial Setup"}
-                {currentStep === "editSchedule" && "Adjust Locked Hours"}
-                {currentStep === "update" && "Update Application"}
-                {currentStep === "remove" && "Remove Protection"}
-                {currentStep === "done" && "Complete"}
-              </h1>
-              <p>
-                {currentStep === "connect" &&
-                  "Connect your Android device to get started."}
-                {currentStep === "dashboard" &&
-                  "Choose a setup or lifecycle management operation."}
-                {currentStep === "schedule" &&
-                  "Choose when the device should be locked down each day."}
-                {currentStep === "install" &&
-                  "Install the app and activate protection."}
-                {currentStep === "editSchedule" &&
-                  "Change the daily locked/unlocked time window."}
-                {currentStep === "update" &&
-                  "Push an updated APK over USB connection."}
-                {currentStep === "remove" &&
-                  "Relinquish Device Owner status and remove application."}
-                {currentStep === "done" &&
-                  "Your operation completed successfully."}
-              </p>
+              <h1>{PAGE_COPY[route].title}</h1>
+              <p>{PAGE_COPY[route].subtitle}</p>
             </div>
 
-            {/* Step Content */}
-            <div className="animate-in" key={currentStep}>
-              {currentStep === "connect" && (
-                <ConnectStep onDeviceSelected={handleDeviceSelected} />
+            {loadError && (
+              <div className="alert alert-error" style={{ marginBottom: 16 }}>
+                <p style={{ margin: 0 }}>{loadError}</p>
+                <button className="btn btn-outline btn-sm" style={{ marginTop: 12 }} onClick={refresh}>
+                  Try again
+                </button>
+              </div>
+            )}
+
+            <div className="animate-in" key={route}>
+              {route === "home" && (
+                <HomePage me={me} loading={loading} refresh={refresh} onGoToDevices={() => setRoute("devices")} />
               )}
-              {currentStep === "dashboard" && (
-                <DashboardStep
-                  deviceId={deviceId}
-                  deviceModel={deviceModel}
-                  onSelectInstall={() => setCurrentStep("schedule")}
-                  onSelectUpdate={() => setCurrentStep("update")}
-                  onSelectRemove={() => setCurrentStep("remove")}
-                  onSelectEditSchedule={() => setCurrentStep("editSchedule")}
-                  onBackToDevices={handleBackToDevices}
-                />
-              )}
-              {currentStep === "schedule" && (
-                <ScheduleStep
-                  deviceId={deviceId}
-                  deviceModel={deviceModel}
-                  mode="initial"
-                  onContinue={(config) => {
-                    setPendingSchedule(config);
-                    setCurrentStep("install");
-                  }}
-                  onCancel={() => setCurrentStep("dashboard")}
-                  onBackToDevices={handleBackToDevices}
-                />
-              )}
-              {currentStep === "install" && pendingSchedule && (
-                <InstallStep
-                  deviceId={deviceId}
-                  deviceModel={deviceModel}
-                  scheduleConfig={pendingSchedule}
-                  onComplete={handleInstallComplete}
-                  onCancel={() => setCurrentStep("schedule")}
-                  onBackToDevices={handleBackToDevices}
-                />
-              )}
-              {currentStep === "editSchedule" && (
-                <ScheduleStep
-                  deviceId={deviceId}
-                  deviceModel={deviceModel}
-                  mode="edit"
-                  onContinue={() => setCurrentStep("dashboard")}
-                  onCancel={() => setCurrentStep("dashboard")}
-                  onBackToDevices={handleBackToDevices}
-                />
-              )}
-              {currentStep === "update" && (
-                <UpdateStep
-                  deviceId={deviceId}
-                  deviceModel={deviceModel}
-                  onComplete={() => setCurrentStep("dashboard")}
-                  onCancel={() => setCurrentStep("dashboard")}
-                  onBackToDevices={handleBackToDevices}
-                />
-              )}
-              {currentStep === "remove" && (
-                <RemoveStep
-                  deviceId={deviceId}
-                  deviceModel={deviceModel}
-                  onComplete={() => setCurrentStep("connect")}
-                  onCancel={() => setCurrentStep("dashboard")}
-                  onBackToDevices={handleBackToDevices}
-                />
-              )}
-              {currentStep === "done" && (
-                <SuccessStep
-                  deviceModel={deviceModel}
-                  email={email}
-                  onDone={() => setCurrentStep("dashboard")}
-                />
+              {route === "devices" && (
+                <DevicesPage me={me} loading={loading} refresh={refresh} />
               )}
             </div>
           </main>

@@ -716,7 +716,7 @@ body {
 
 .main-content {
   padding: 24px 0;
-  max-width: 520px;
+  max-width: 720px;
 }
 
 /* For smaller windows, stack them */
@@ -739,4 +739,266 @@ body {
 /* ── Checkmark SVG ───────────────────────────────────────── */
 .icon-check {
   display: inline-flex;
+}
+
+/* ── Sidebar Navigation ──────────────────────────────────── */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.nav-item:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.nav-item.active {
+  background: oklch(0.71 0.08 247 / 0.1);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.nav-item-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+  .sidebar-nav {
+    flex-direction: row;
+  }
+  .nav-item {
+    width: auto;
+  }
+}
+
+/* ── Day-of-week Toggles ─────────────────────────────────── */
+.day-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.day-toggle {
+  flex: 1 1 60px;
+  min-width: 60px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.day-toggle:hover {
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+
+.day-toggle.selected {
+  background: oklch(0.71 0.08 247 / 0.12);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ── Radio Cards ─────────────────────────────────────────── */
+.radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.radio-card:hover {
+  border-color: var(--primary);
+}
+
+.radio-card.selected {
+  border-color: var(--primary);
+  background: oklch(0.71 0.08 247 / 0.05);
+}
+
+.radio-card input {
+  margin-top: 3px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
+/* ── Alerts ──────────────────────────────────────────────── */
+.alert {
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.alert-info {
+  background: oklch(0.71 0.08 247 / 0.06);
+  border: 1px solid oklch(0.71 0.08 247 / 0.18);
+}
+
+.alert-success {
+  background: oklch(0.60 0.15 150 / 0.06);
+  border: 1px solid oklch(0.60 0.15 150 / 0.2);
+  color: oklch(0.5 0.15 150);
+}
+
+.alert-warning {
+  background: oklch(0.75 0.15 85 / 0.08);
+  border: 1px solid oklch(0.75 0.15 85 / 0.3);
+}
+
+.alert-error {
+  background: oklch(0.6 0.22 27 / 0.05);
+  border: 1px solid oklch(0.6 0.22 27 / 0.18);
+}
+
+/* ── Modal ───────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+/* ── Detail Grid ─────────────────────────────────────────── */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+
+.detail-grid dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+  margin-bottom: 4px;
+}
+
+.detail-grid dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* ── Action & Push Rows ──────────────────────────────────── */
+.action-row,
+.push-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.action-row + .action-row {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.action-row > div:first-child,
+.push-row > div:first-child {
+  flex: 1 1 260px;
+}
+
+.action-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.action-detail {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Instruction List ────────────────────────────────────── */
+.instruction-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.instruction-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.instruction-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: oklch(0.71 0.08 247 / 0.12);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.instruction-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.instruction-detail {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Form Field Hint ─────────────────────────────────────── */
+.field-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-bottom: 6px;
 }

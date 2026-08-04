@@ -10,9 +10,10 @@ interface Device {
 
 interface ConnectStepProps {
   onDeviceSelected: (serial: string, model: string) => void;
+  onBack?: () => void;
 }
 
-export default function ConnectStep({ onDeviceSelected }: ConnectStepProps) {
+export default function ConnectStep({ onDeviceSelected, onBack }: ConnectStepProps) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [scanning, setScanning] = useState(false);
   const [selectedSerial, setSelectedSerial] = useState<string | null>(null);
@@ -114,16 +115,21 @@ export default function ConnectStep({ onDeviceSelected }: ConnectStepProps) {
         </div>
       </div>
 
-      {selectedSerial && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", justifyContent: onBack ? "space-between" : "flex-end" }}>
+        {onBack && (
+          <button className="btn btn-ghost" onClick={onBack}>
+            Back
+          </button>
+        )}
+        {selectedSerial && (
           <button className="btn btn-primary" onClick={handleContinue}>
             Continue
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

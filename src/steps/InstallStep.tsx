@@ -4,12 +4,17 @@ import DeviceDisconnectedModal, {
   checkDeviceConnected,
   DeviceConnectionStatus,
 } from "../components/DeviceDisconnectedModal";
-import { ScheduleConfig } from "./ScheduleStep";
+import { markSchedulePushed, registerDevice, Schedule } from "../lib/api";
 
 interface InstallStepProps {
   deviceId: string;
   deviceModel: string;
-  scheduleConfig: ScheduleConfig;
+  /**
+   * The account's schedule, if one has been created. Pushed here while USB debugging is
+   * still open — after `finalize_setup` seals it, pushing requires the parent to open the
+   * phone's 10-minute Developer Mode window, so doing it now saves them that entirely.
+   */
+  schedule: Schedule | null;
   onComplete: () => void;
   onCancel: () => void;
   onBackToDevices: () => void;
@@ -53,7 +58,7 @@ const ERROR_MAP: Record<string, PhaseError> = {
   },
 };
 
-export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onComplete, onCancel, onBackToDevices }: InstallStepProps) {
+export default function InstallStep({ deviceId, deviceModel, schedule, onComplete, onCancel, onBackToDevices }: InstallStepProps) {
   const [phase, setPhase] = useState<Phase>("prerequisites");
   const [phaseError, setPhaseError] = useState<PhaseError | null>(null);
   const [apkPath, setApkPath] = useState("");
@@ -63,6 +68,7 @@ export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onC
   const [statusText, setStatusText] = useState("");
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
   const [scheduleWarning, setScheduleWarning] = useState<string | null>(null);
+  const [enrolmentWarning, setEnrolmentWarning] = useState<string | null>(null);
 
   // Auto-run prerequisites check
   useEffect(() => {
@@ -81,6 +87,23 @@ export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onC
       return false;
     }
     return true;
+  }
+
+  /**
+   * Persist the enrolment so Devices still shows this phone after a restart. Failing here
+   * doesn't undo a successful provisioning, so it's reported as a warning rather than
+   * flipping the whole flow into an error state.
+   */
+  async function recordEnrolment() {
+    try {
+      await registerDevice(deviceId, deviceModel);
+    } catch (err) {
+      setEnrolmentWarning(
+        `The phone is protected, but we couldn't save it to your account ` +
+          `(${String(err instanceof Error ? err.message : err)}). Reconnect and try again ` +
+          `from the Devices page, or contact support if it persists.`
+      );
+    }
   }
 
   async function checkPrereqs() {
@@ -205,32 +228,44 @@ export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onC
     }
 
     setScheduleWarning(null);
-    let scheduleError: unknown = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await invoke<string>("push_schedule", {
-          deviceId,
-          lockStartHour: scheduleConfig.lockStartHour,
-          lockStartMinute: scheduleConfig.lockStartMinute,
-          lockEndHour: scheduleConfig.lockEndHour,
-          lockEndMinute: scheduleConfig.lockEndMinute,
-          timezoneId: scheduleConfig.timezoneId,
-        });
-        scheduleError = null;
-        break;
-      } catch (err) {
-        scheduleError = err;
-        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1500));
+    if (schedule) {
+      let scheduleError: unknown = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await invoke<string>("push_schedule", {
+            deviceId,
+            lockStartHour: schedule.lock_start_hour,
+            lockStartMinute: schedule.lock_start_minute,
+            lockEndHour: schedule.lock_end_hour,
+            lockEndMinute: schedule.lock_end_minute,
+            daysMask: schedule.days_mask,
+            activeFrom: new Date(schedule.active_from).getTime(),
+            activeUntil: new Date(schedule.active_until).getTime(),
+            timezoneId: schedule.timezone_id,
+          });
+          scheduleError = null;
+          break;
+        } catch (err) {
+          scheduleError = err;
+          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
       }
-    }
-    if (scheduleError) {
-      // Non-fatal to the overall install (device is still protected), but the parent
-      // needs to know the schedule specifically didn't land — surfaced in the success
-      // card below rather than silently swallowed.
-      setScheduleWarning(
-        `The locked-hours schedule could not be applied (${String(scheduleError)}). ` +
-          `Use "Adjust Locked Hours" from the dashboard afterward to set it.`
-      );
+      if (scheduleError) {
+        // Non-fatal to the overall install (device is still protected), but the parent
+        // needs to know the schedule specifically didn't land — surfaced in the success
+        // card below rather than silently swallowed.
+        setScheduleWarning(
+          `The schedule could not be applied (${String(scheduleError)}). ` +
+            `Use "Push Schedule" on the Home page afterwards — you'll need the phone's ` +
+            `10-minute Developer Mode window for that.`
+        );
+      } else {
+        try {
+          await markSchedulePushed(schedule.id);
+        } catch {
+          // Bookkeeping only — the device has the schedule either way.
+        }
+      }
     }
 
     try {
@@ -249,9 +284,10 @@ export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onC
         try {
           await invoke<string>("finalize_setup", { deviceId });
         } catch {
-          // Non-fatal — the app still works, just retry "Adjust Locked Hours" later if
-          // USB debugging somehow needs to be sealed again.
+          // Non-fatal — the app still works, just re-push from Home later if USB
+          // debugging somehow needs to be sealed again.
         }
+        await recordEnrolment();
         setPhase("done");
         setStatusText("");
       } else {
@@ -267,6 +303,7 @@ export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onC
       } catch {
         // Non-fatal
       }
+      await recordEnrolment();
       setPhase("done");
       setStatusText("");
     }
@@ -395,6 +432,18 @@ export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onC
             </div>
           )}
 
+          {/* No schedule yet — warn before we seal USB debugging, because pushing one
+              afterwards costs the parent a trip through the Developer Mode window. */}
+          {phase === "prerequisites" && !schedule && (
+            <div className="alert alert-warning" style={{ marginBottom: 16 }}>
+              <p style={{ margin: 0, lineHeight: 1.6 }}>
+                ⚠️ You haven't created a schedule yet. You can still set this device up, but the
+                schedule will have to be pushed later using the phone's 10-minute Developer Mode
+                window. Creating it on the Home page first avoids that.
+              </p>
+            </div>
+          )}
+
           {/* APK path input — only show during prerequisites phase */}
           {phase === "prerequisites" && (
             <div style={{ marginBottom: 16 }}>
@@ -513,19 +562,20 @@ export default function InstallStep({ deviceId, deviceModel, scheduleConfig, onC
             </div>
           )}
 
-          {/* Schedule push warning — installation still succeeded, but the schedule didn't land */}
-          {phase === "done" && scheduleWarning && (
-            <div style={{
-              background: "oklch(0.75 0.15 85 / 0.08)",
-              border: "1px solid oklch(0.75 0.15 85 / 0.3)",
-              borderRadius: "var(--radius)",
-              padding: "16px 20px",
-              marginBottom: 16,
-              animation: "fadeInUp 0.35s ease-out both",
-            }}>
-              <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0, lineHeight: 1.5 }}>
-                ⚠️ {scheduleWarning}
-              </p>
+          {/* Installation still succeeded, but the schedule push or the account record
+              didn't land — both need saying rather than silently swallowing. */}
+          {phase === "done" && (scheduleWarning || enrolmentWarning) && (
+            <div className="alert alert-warning" style={{ marginBottom: 16, animation: "fadeInUp 0.35s ease-out both" }}>
+              {scheduleWarning && (
+                <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0, lineHeight: 1.5 }}>
+                  ⚠️ {scheduleWarning}
+                </p>
+              )}
+              {enrolmentWarning && (
+                <p style={{ fontSize: 13, color: "var(--foreground)", margin: scheduleWarning ? "10px 0 0" : 0, lineHeight: 1.5 }}>
+                  ⚠️ {enrolmentWarning}
+                </p>
+              )}
             </div>
           )}
 

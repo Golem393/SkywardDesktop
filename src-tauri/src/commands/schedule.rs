@@ -1,11 +1,14 @@
 use crate::adb;
 use tauri::AppHandle;
 
-/// Tauri command: Push a daily locked-hours schedule to the installed Android app via
-/// ADB broadcast. Kept as a sibling command to `push_config` rather than merged into it —
+/// Tauri command: Push the locked-hours schedule to the installed Android app via ADB
+/// broadcast. Kept as a sibling command to `push_config` rather than merged into it —
 /// schedule and network/DNS config are independent concerns pushed at different times
-/// (the schedule can be re-pushed via "Adjust Locked Hours" without touching
-/// base_url/api_key/dns_hostname).
+/// (the schedule is pushed from the Home page, config only during enrolment).
+///
+/// `days_mask` is a weekday bitmask (bit 0 = Sunday … bit 6 = Saturday). `active_from` and
+/// `active_until` bound the block period in epoch millis; once `active_until` passes the
+/// schedule expires on-device and the phone unblocks permanently.
 #[tauri::command]
 pub async fn push_schedule(
     app: AppHandle,
@@ -14,6 +17,9 @@ pub async fn push_schedule(
     lock_start_minute: u8,
     lock_end_hour: u8,
     lock_end_minute: u8,
+    days_mask: u16,
+    active_from: i64,
+    active_until: i64,
     timezone_id: String,
 ) -> Result<String, String> {
     let args = [
@@ -36,6 +42,16 @@ pub async fn push_schedule(
         "--ei",
         "lock_end_minute",
         &lock_end_minute.to_string(),
+        "--ei",
+        "days_mask",
+        &days_mask.to_string(),
+        // `--el` (long) rather than `--ei` — epoch millis overflow a 32-bit int extra.
+        "--el",
+        "active_from",
+        &active_from.to_string(),
+        "--el",
+        "active_until",
+        &active_until.to_string(),
         "--es",
         "timezone_id",
         &timezone_id,

@@ -6,6 +6,10 @@ pub struct AuthResponse {
     pub success: bool,
     #[serde(rename = "errorMessage")]
     pub error_message: Option<String>,
+    /// Supabase session token, passed straight through to the frontend so it can
+    /// authenticate its own schedule/device calls as this parent.
+    #[serde(rename = "accessToken", default)]
+    pub access_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
