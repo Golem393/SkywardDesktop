@@ -35,22 +35,71 @@ pub async fn install_apk(
     }
 }
 
+/// Marker in the DPM failure for the ACCOUNTS_NOT_EMPTY precondition. Matched on the
+/// distinctive tail of "Not allowed to set the device owner because there are already
+/// some accounts on the device." so it survives minor wording drift between OS versions.
+const ACCOUNTS_NOT_EMPTY: &str = "some accounts on the device";
+
+/// How long to keep retrying while DPM still believes accounts exist.
+///
+/// Measured generously on purpose. Observed on a Samsung A17: `dumpsys account` reported
+/// zero accounts, the ~10s APK push happened, and DPM still rejected provisioning for
+/// several more attempts — succeeding only tens of seconds later. So the settle is not a
+/// one-second race and a short window just produces a confusing hard failure.
+///
+/// Only the accounts rejection waits this out, and only a parent who genuinely just
+/// signed out can hit it — anyone with accounts still on the phone is stopped by
+/// `check_prerequisites` long before this runs. Nobody else pays the wait.
+const OWNER_RETRY_ATTEMPTS: usize = 30;
+const OWNER_RETRY_DELAY_MS: u64 = 3000;
+
 /// Tauri command: Set SkywardBlocker as the Device Owner via Device Policy Manager (DPM).
+///
+/// Removing the last account is not instantaneous. Observed on hardware: immediately
+/// after the parent removes their accounts, `dumpsys account` already reports zero — so
+/// `check_prerequisites` passes — while DPM still rejects provisioning with
+/// ACCOUNTS_NOT_EMPTY. Retrying the identical command a couple of seconds later
+/// succeeds. Since setup now asks for account removal right before this call, a single
+/// attempt would hand the parent a hard failure blaming accounts they just removed.
+///
+/// Only that specific rejection is retried; every other failure is real and returns at
+/// once rather than making the parent wait out the backoff.
 #[tauri::command]
 pub async fn set_device_owner(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
-    let output = adb::run_adb_for_device(
-        Some(&app),
-        &device_id,
-        &["shell", "dpm", "set-device-owner", DEVICE_ADMIN_COMPONENT],
-    )
-    .map_err(|e| e.to_string())?;
+    let mut last_failure = String::new();
 
-    // DPM returns messages like: "Success: Device owner set to package com.example.skywardblocker/.admin.SkywardDeviceAdmin"
-    if output.to_lowercase().contains("success") {
-        Ok("Device Owner set successfully.".to_string())
-    } else {
-        Err(format!("Failed to set Device Owner: {}", output.trim()))
+    for attempt in 0..OWNER_RETRY_ATTEMPTS {
+        // A rejected provisioning exits 255 and prints the Java exception on stderr, so the
+        // reason arrives as CommandFailed rather than as Ok output — checking the success
+        // path alone would never see it.
+        let failure = match adb::run_adb_for_device(
+            Some(&app),
+            &device_id,
+            &["shell", "dpm", "set-device-owner", DEVICE_ADMIN_COMPONENT],
+        ) {
+            // DPM prints "Success: Device owner set to package ..." on stdout.
+            Ok(output) if output.to_lowercase().contains("success") => {
+                return Ok("Device Owner set successfully.".to_string());
+            }
+            // Exit 0 without the success marker shouldn't happen, but treat it as a
+            // failure rather than silently reporting a Device Owner that isn't set.
+            Ok(output) => output.trim().to_string(),
+            Err(adb::AdbError::CommandFailed { stderr, .. }) => stderr.trim().to_string(),
+            // Missing binary, dead device: not something a retry can fix.
+            Err(other) => return Err(other.to_string()),
+        };
+
+        last_failure = failure;
+
+        let accounts_still_settling = last_failure.contains(ACCOUNTS_NOT_EMPTY);
+        if !accounts_still_settling || attempt + 1 == OWNER_RETRY_ATTEMPTS {
+            break;
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(OWNER_RETRY_DELAY_MS));
     }
+
+    Err(format!("Failed to set Device Owner: {}", last_failure))
 }
 
 /// Tauri command: Send broadcast to clear Device Owner status (relinquish control for testing/uninstallation).

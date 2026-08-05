@@ -54,7 +54,11 @@ const ERROR_MAP: Record<string, PhaseError> = {
   device_owner: {
     title: "Activation Failed",
     message: "Could not set SkywardBlocker as Device Owner.",
-    suggestion: "Ensure all Google accounts are removed from the device and no other Device Owner is active. Then factory‑reset the device and retry.",
+    suggestion:
+      "If you just signed out of accounts, give the phone another minute and hit Retry — " +
+      "Android can keep reporting them for a while after they're gone. Otherwise check that " +
+      "every account is signed out and no other Device Owner is active. If it keeps failing, " +
+      "a factory reset clears both conditions.",
   },
   verification: {
     title: "Verification Failed",
@@ -84,6 +88,38 @@ const EXPIRY_MESSAGES: Record<ExpiryKind, string> = {
     "the phone is already enforcing it.",
 };
 
+/**
+ * The accounts the parent had to sign out of, remembered for the duration of setup so the
+ * success screen can hand back the exact list to sign into again. Keyed by device, since
+ * one parent may set up several phones.
+ *
+ * Held in localStorage rather than component state because the list is captured before
+ * sign-out and needed after provisioning — a reload or a trip back to the dashboard in
+ * between must not lose it. Only non-empty lists are written, so the re-check that
+ * follows a successful sign-out (which legitimately returns zero accounts) doesn't
+ * erase the very thing being remembered.
+ */
+const accountsKey = (deviceId: string) => `skyward.accountsToRestore.${deviceId}`;
+
+function rememberAccounts(deviceId: string, accounts: string[]) {
+  if (accounts.length === 0) return;
+  try {
+    localStorage.setItem(accountsKey(deviceId), JSON.stringify(accounts));
+  } catch {
+    // Storage unavailable — the checklist is a convenience, not worth failing setup for.
+  }
+}
+
+function recallAccounts(deviceId: string): string[] {
+  try {
+    const raw = localStorage.getItem(accountsKey(deviceId));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function InstallStep({ deviceId, deviceModel, schedule, onComplete, onCancel, onBackToDevices, signOut }: InstallStepProps) {
   const [phase, setPhase] = useState<Phase>("prerequisites");
   const [phaseError, setPhaseError] = useState<PhaseError | null>(null);
@@ -95,6 +131,11 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
   const [scheduleWarning, setScheduleWarning] = useState<string | null>(null);
   const [enrolmentWarning, setEnrolmentWarning] = useState<string | null>(null);
+  /** Accounts still signed in as of the last check — the sign-out checklist. */
+  const [pendingAccounts, setPendingAccounts] = useState<string[]>([]);
+  /** Accounts seen at any point during setup — the sign-back-in checklist. */
+  const [accountsToRestore, setAccountsToRestore] = useState<string[]>(() => recallAccounts(deviceId));
+  const [openingSettings, setOpeningSettings] = useState(false);
 
   /**
    * Session expiry mid-install is recorded here and acted on at the very end, rather than
@@ -182,6 +223,12 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       }));
       setPrereqMessages(parsed);
 
+      setPendingAccounts(res.accounts);
+      if (res.accounts.length > 0) {
+        rememberAccounts(deviceId, res.accounts);
+        setAccountsToRestore(res.accounts);
+      }
+
       if (res.can_proceed) {
         setPrereqOk(true);
         setStatusText("");
@@ -201,6 +248,22 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         ...ERROR_MAP.prereq_check,
         message: `${ERROR_MAP.prereq_check.message} ${String(err)}`,
       });
+    }
+  }
+
+  /**
+   * Jump the phone straight to its Accounts screen. Saves the parent hunting through
+   * Settings, and matters most on OEM skins where Accounts is buried. Best-effort: if it
+   * fails they can still navigate there themselves, so it never blocks setup.
+   */
+  async function openAccountSettings() {
+    setOpeningSettings(true);
+    try {
+      await invoke<string>("open_account_settings", { deviceId });
+    } catch {
+      // Non-fatal — the instructions above the button still stand on their own.
+    } finally {
+      setOpeningSettings(false);
     }
   }
 
@@ -235,8 +298,17 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     }
 
     // Phase 2: Set Device Owner
+    //
+    // Android takes a while to stop reporting freshly-removed accounts to the device
+    // policy service, and set_device_owner sits in a retry loop for up to ~90s waiting
+    // that out. Say so, otherwise a parent who just signed out watches an unexplained
+    // spinner and assumes it has hung.
     setPhase("activating");
-    setStatusText("Activating Device Owner permissions…");
+    setStatusText(
+      accountsToRestore.length > 0
+        ? "Activating Device Owner permissions… the phone can take up to a minute to let go of the accounts you just signed out of."
+        : "Activating Device Owner permissions…"
+    );
     try {
       await invoke<string>("set_device_owner", { deviceId });
     } catch (err) {
@@ -484,6 +556,48 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
             </div>
           )}
 
+          {/* Signing out is asked for here, immediately before Device Owner is claimed,
+              rather than back in the prep step — it keeps the phone signed in for as much
+              of setup as possible, so the window where the parent is locked out of their
+              own accounts is measured in minutes. */}
+          {phase === "prerequisites" && pendingAccounts.length > 0 && (
+            <div style={{
+              background: "oklch(0.6 0.22 27 / 0.05)",
+              border: "1px solid oklch(0.6 0.22 27 / 0.18)",
+              borderRadius: "var(--radius)",
+              padding: "16px 20px",
+              marginBottom: 16,
+            }}>
+              <h4 style={{ margin: "0 0 8px 0", fontSize: 14, color: "var(--destructive)" }}>
+                Sign out of {pendingAccounts.length} account{pendingAccounts.length === 1 ? "" : "s"} on the phone
+              </h4>
+              <p style={{ fontSize: 13, color: "var(--foreground)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                Android won't hand over device administration while an account is signed in.{" "}
+                <strong>You can sign straight back in as soon as setup finishes</strong> — nothing
+                is deleted, and we'll show you this list again at the end so you know exactly
+                what to restore.
+              </p>
+              <ul style={{
+                margin: "0 0 14px",
+                paddingLeft: 18,
+                fontSize: 13,
+                color: "var(--foreground)",
+                lineHeight: 1.7,
+              }}>
+                {pendingAccounts.map((account) => (
+                  <li key={account}>{account}</li>
+                ))}
+              </ul>
+              <button className="btn btn-outline" onClick={openAccountSettings} disabled={openingSettings}>
+                {openingSettings ? "Opening…" : "Open Accounts on the phone"}
+              </button>
+              <p style={{ fontSize: 12, color: "var(--muted-foreground)", margin: "12px 0 0", lineHeight: 1.5 }}>
+                Only the accounts listed above matter. You don't need to log out of Instagram,
+                TikTok or similar apps — being signed into an app isn't the same thing.
+              </p>
+            </div>
+          )}
+
           {/* No schedule yet — creating one now saves a separate push later. */}
           {phase === "prerequisites" && !schedule && (
             <div className="alert alert-warning" style={{ marginBottom: 16 }}>
@@ -610,6 +724,42 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                 lineHeight: 1.5,
                 paddingLeft: 38,
               }}>SkywardBlocker has been installed and activated on your device. You can now proceed to the next step.</p>
+            </div>
+          )}
+
+          {/* The other half of the promise made before sign-out: hand back the exact list,
+              so the parent never has to remember what was on the phone. */}
+          {phase === "done" && accountsToRestore.length > 0 && (
+            <div style={{
+              background: "oklch(0.71 0.08 247 / 0.06)",
+              border: "1px solid oklch(0.71 0.08 247 / 0.18)",
+              borderRadius: "var(--radius)",
+              padding: "16px 20px",
+              marginBottom: 16,
+              animation: "fadeInUp 0.35s ease-out both",
+            }}>
+              <h4 style={{ margin: "0 0 8px 0", fontSize: 14, color: "var(--foreground)" }}>
+                Sign back into {accountsToRestore.length} account{accountsToRestore.length === 1 ? "" : "s"}
+              </h4>
+              <p style={{ fontSize: 13, color: "var(--foreground)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                The phone is protected now, so these can go straight back on. Add the Google
+                account first — it restores the phone's saved passwords, which then fill in
+                most of the rest for you.
+              </p>
+              <ul style={{
+                margin: "0 0 14px",
+                paddingLeft: 18,
+                fontSize: 13,
+                color: "var(--foreground)",
+                lineHeight: 1.7,
+              }}>
+                {accountsToRestore.map((account) => (
+                  <li key={account}>{account}</li>
+                ))}
+              </ul>
+              <button className="btn btn-outline" onClick={openAccountSettings} disabled={openingSettings}>
+                {openingSettings ? "Opening…" : "Open Accounts on the phone"}
+              </button>
             </div>
           )}
 

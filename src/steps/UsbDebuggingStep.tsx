@@ -3,12 +3,12 @@ interface UsbDebuggingStepProps {
   onCancel: () => void;
 }
 
+/**
+ * Signing out of accounts is deliberately NOT here. It used to be step 1, which left the
+ * phone signed out for the whole of setup; it now happens in InstallStep, immediately
+ * before Device Owner is claimed, so the window is as short as possible.
+ */
 const INSTRUCTIONS: { title: string; detail: string }[] = [
-  {
-    title: "Remove every account from the phone",
-    detail:
-      "Settings → Accounts, and remove all Google and other accounts. Android refuses to hand over device administration while any account is still signed in, so setup will fail otherwise.",
-  },
   {
     title: "Unlock Developer options",
     detail:
@@ -40,7 +40,7 @@ export default function UsbDebuggingStep({ onContinue, onCancel }: UsbDebuggingS
         </div>
         <div className="card-content">
           <p className="card-description" style={{ marginTop: 0, marginBottom: 20 }}>
-            Do these four things on the phone you want to protect, in order.
+            Do these three things on the phone you want to protect, in order.
           </p>
 
           <ol className="instruction-list">
@@ -69,7 +69,7 @@ export default function UsbDebuggingStep({ onContinue, onCancel }: UsbDebuggingS
           Cancel
         </button>
         <button className="btn btn-primary" onClick={onContinue}>
-          I've done all four
+          I've done all three
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
           </svg>

@@ -247,13 +247,40 @@ pub async fn get_device_info(app: tauri::AppHandle, device_id: String) -> Result
     })
 }
 
+/// Tauri command: open the phone's Accounts screen over ADB.
+///
+/// `SYNC_SETTINGS` is the Accounts dashboard (verified resolving to
+/// `Settings$AccountDashboardActivity` on Samsung One UI); `ACCOUNT_SYNC_SETTINGS`
+/// is the per-account sync detail page and is the wrong target here. Saves the
+/// parent hunting through Settings when the account check fails.
+#[tauri::command]
+pub async fn open_account_settings(
+    app: tauri::AppHandle,
+    device_id: String,
+) -> Result<String, String> {
+    adb::run_adb_for_device(
+        Some(&app),
+        &device_id,
+        &["shell", "am", "start", "-a", "android.settings.SYNC_SETTINGS"],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok("Opened the Accounts screen on the phone.".to_string())
+}
+
 /// Tauri command: check prerequisites before installation.
 ///
 /// Checks:
 /// 1. Device is authorized (USB debugging prompt accepted)
 /// 2. SkywardBlocker is not already installed on the device
 /// 3. No existing device owner is active on the device
-/// 4. No Google accounts on device (required for `dpm set-device-owner`)
+/// 4. No accounts on device (required for `dpm set-device-owner`)
+///
+/// Note on (4): the blocking set is every `AccountManager` account, not just Google
+/// ones. Being logged into an app is not the same thing — verified on hardware, where
+/// Instagram and StarMaker held live sessions with no account entry (and so did not
+/// block) while Telegram and Polarsteps did register accounts. `dumpsys account` is the
+/// only reliable source; never special-case a package.
 #[tauri::command]
 pub async fn check_prerequisites(
     app: tauri::AppHandle,
@@ -331,11 +358,11 @@ pub async fn check_prerequisites(
         let raw_accounts = parse_unique_accounts(&output);
 
         if raw_accounts.is_empty() {
-            messages.push("✅ No accounts on device".to_string());
+            messages.push("✅ No accounts signed in on the phone".to_string());
             (true, Vec::new())
         } else {
             messages.push(format!(
-                "❌ {} account(s) found on device — remove all accounts before installation",
+                "❌ {} account(s) signed in — sign out of these, then sign straight back in once setup finishes",
                 raw_accounts.len()
             ));
             let mut label_cache = HashMap::new();
@@ -346,9 +373,8 @@ pub async fn check_prerequisites(
                     format_account_display(name, account_type, label.as_deref())
                 })
                 .collect();
-            for account in &accounts {
-                messages.push(format!("   • {}", account));
-            }
+            // The names themselves are returned in `accounts` and rendered by the UI as a
+            // sign-out/sign-back-in checklist, so they are deliberately not repeated here.
             (false, accounts)
         }
     } else {
