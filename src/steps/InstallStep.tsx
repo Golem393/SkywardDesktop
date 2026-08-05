@@ -6,7 +6,6 @@ import DeviceDisconnectedModal, {
 } from "../components/DeviceDisconnectedModal";
 import {
   errorMessage,
-  markDeviceFinalized,
   markSchedulePushed,
   registerDevice,
   Schedule,
@@ -17,11 +16,8 @@ import {
 interface InstallStepProps {
   deviceId: string;
   deviceModel: string;
-  /**
-   * The account's schedule, if one has been created. Pushed here while USB debugging is
-   * still open — after `finalize_setup` seals it, pushing requires the parent to open the
-   * phone's 10-minute Developer Mode window, so doing it now saves them that entirely.
-   */
+  /** The account's schedule, if one has been created. Pushed here as part of setup so the
+   *  parent doesn't have to come back and push it separately afterwards. */
   schedule: Schedule | null;
   onComplete: () => void;
   onCancel: () => void;
@@ -71,10 +67,10 @@ const ERROR_MAP: Record<string, PhaseError> = {
  * What failed to save when the session died mid-install, most severe first.
  *
  * Only one is ever shown. A dead token fails every write in the run, but the recovery
- * paths cascade — re-linking the device brings back both the "Finish securing" action and
- * the schedule badge — so the parent only needs to be told the worst of it.
+ * paths cascade — re-linking the device brings back the schedule badge too — so the
+ * parent only needs to be told the worst of it.
  */
-const EXPIRY_SEVERITY = ["enrolment", "seal", "schedule"] as const;
+const EXPIRY_SEVERITY = ["enrolment", "schedule"] as const;
 type ExpiryKind = (typeof EXPIRY_SEVERITY)[number];
 
 const EXPIRY_MESSAGES: Record<ExpiryKind, string> = {
@@ -82,10 +78,6 @@ const EXPIRY_MESSAGES: Record<ExpiryKind, string> = {
     "Your session expired during setup. The phone is fully protected, but it wasn't saved " +
     'to your account. After signing in, go to Devices → Add Device → "Link existing ' +
     'device" to attach it — nothing on the phone needs redoing.',
-  seal:
-    "Your session expired during setup. The phone is protected and locked down, but we " +
-    'couldn\'t record the final step, so it will show as "Not secured". Use "Finish ' +
-    'securing" on the Devices page after signing in — it\'s safe to run again.',
   schedule:
     "Your session expired during setup. The phone is protected and has the schedule, but " +
     'we couldn\'t record the push, so it will show as "Not pushed yet". That\'s cosmetic — ' +
@@ -103,7 +95,6 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
   const [scheduleWarning, setScheduleWarning] = useState<string | null>(null);
   const [enrolmentWarning, setEnrolmentWarning] = useState<string | null>(null);
-  const [sealWarning, setSealWarning] = useState<string | null>(null);
 
   /**
    * Session expiry mid-install is recorded here and acted on at the very end, rather than
@@ -161,48 +152,6 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         `The phone is protected, but we couldn't save it to your account ` +
           `(${errorMessage(err)}). Nothing is lost — go to Devices → Add Device → ` +
           `"Link existing device" to attach this phone to your account without reinstalling.`
-      );
-    }
-  }
-
-  /**
-   * Seal USB debugging, then record that it happened.
-   *
-   * Previously this was a bare `catch {}`. That was a real hole: FINALIZE_SETUP applies
-   * DISALLOW_DEBUGGING_FEATURES, so when it silently failed the phone stayed ADB-reachable
-   * — and since AdbCommandReceiver is exported, anyone could broadcast CLEAR_OWNER and
-   * uninstall. Nothing recorded it and no UI could re-send it.
-   *
-   * Now it retries, and on exhaustion says so loudly and leaves `finalized = false` on the
-   * device record so the Devices page can offer "Finish securing".
-   */
-  async function sealDevice() {
-    try {
-      await withRetry(() => invoke<string>("finalize_setup", { deviceId }));
-    } catch {
-      setSealWarning(
-        "The phone is protected, but USB debugging could not be locked down. Until that's " +
-          "done it can still be removed over USB. Reconnect the phone and use " +
-          '"Finish securing" on the Devices page before handing it over.'
-      );
-      return;
-    }
-
-    // Sealed. Recording it is bookkeeping — leaving the flag false only costs the parent a
-    // "Finish securing" click, which re-runs both halves safely, so this never undoes the
-    // seal. It does need saying, though: silently swallowing it is what hid the original
-    // hole this whole flag exists to expose.
-    try {
-      await withRetry(() => markDeviceFinalized(deviceId));
-    } catch (err) {
-      if (err instanceof SessionExpiredError) {
-        noteExpiry("seal");
-        return;
-      }
-      setSealWarning(
-        `The phone was secured, but we couldn't record it (${errorMessage(err)}). It will ` +
-          `show as "Not secured" on the Devices page — use "Finish securing" there to ` +
-          `clear it, it's safe to run again.`
       );
     }
   }
@@ -300,8 +249,8 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
     // Confirm Device Owner activation actually took effect over ADB before spending
     // time pushing config/schedule. USB debugging is intentionally left enabled by the
-    // app until finalize_setup runs at the very end of this flow, so a real failure here
-    // means activation genuinely didn't work — not an expected disconnect to work around.
+    // app at all times, so a real failure here means activation genuinely didn't work —
+    // not an expected disconnect to work around.
     setStatusText("Confirming Device Owner activation…");
     try {
       const check = await invoke<VerificationResult>("verify_installation", { deviceId });
@@ -353,8 +302,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         // card below rather than silently swallowed.
         setScheduleWarning(
           `The schedule could not be applied (${errorMessage(err)}). ` +
-            `Use "Push Schedule" on the Home page afterwards — you'll need the phone's ` +
-            `10-minute Developer Mode window for that.`
+            `Use "Push Schedule" on the Home page afterwards.`
         );
       }
 
@@ -381,19 +329,13 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       // Non-fatal — continue
     }
 
-    // Phase 4: Verify, then seal USB debugging now that config/schedule/launch are done
+    // Phase 4: Verify installation succeeded
     setStatusText("Verifying installation…");
     try {
       const res = await invoke<VerificationResult>("verify_installation", { deviceId });
 
       if (res.success) {
-        // Save BEFORE sealing. finalize_setup closes USB debugging, so if the save were
-        // to fail afterwards the phone would be unreachable without the parent opening the
-        // phone's 10-minute Developer Mode window. Saving first means a failure here is
-        // recoverable with just a re-login and "Link existing device".
         await recordEnrolment();
-        setStatusText("Securing the device…");
-        await sealDevice();
         setPhase("done");
         setStatusText("");
       } else {
@@ -403,10 +345,8 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       }
     } catch {
       // If verification itself fails but previous steps passed, consider it done.
-      // Device is provisioned either way — save it, then seal it.
+      // Device is provisioned either way — save it.
       await recordEnrolment();
-      setStatusText("Securing the device…");
-      await sealDevice();
       setPhase("done");
       setStatusText("");
     }
@@ -544,14 +484,13 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
             </div>
           )}
 
-          {/* No schedule yet — warn before we seal USB debugging, because pushing one
-              afterwards costs the parent a trip through the Developer Mode window. */}
+          {/* No schedule yet — creating one now saves a separate push later. */}
           {phase === "prerequisites" && !schedule && (
             <div className="alert alert-warning" style={{ marginBottom: 16 }}>
               <p style={{ margin: 0, lineHeight: 1.6 }}>
                 ⚠️ You haven't created a schedule yet. You can still set this device up, but the
-                schedule will have to be pushed later using the phone's 10-minute Developer Mode
-                window. Creating it on the Home page first avoids that.
+                schedule will have to be pushed later from the Home page. Creating it first
+                avoids that extra step.
               </p>
             </div>
           )}
@@ -676,19 +615,6 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
           {/* Installation still succeeded, but the schedule push or the account record
               didn't land — both need saying rather than silently swallowing. */}
-          {/* An unsealed device is a security problem, not a bookkeeping one — it gets a
-              red alert of its own rather than sharing the amber warning block. */}
-          {phase === "done" && sealWarning && (
-            <div className="alert alert-error" style={{ marginBottom: 16, animation: "fadeInUp 0.35s ease-out both" }}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: "var(--destructive)", margin: "0 0 6px" }}>
-                Device not fully secured
-              </p>
-              <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0, lineHeight: 1.5 }}>
-                {sealWarning}
-              </p>
-            </div>
-          )}
-
           {phase === "done" && (scheduleWarning || enrolmentWarning) && (
             <div className="alert alert-warning" style={{ marginBottom: 16, animation: "fadeInUp 0.35s ease-out both" }}>
               {scheduleWarning && (

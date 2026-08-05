@@ -8,7 +8,7 @@ import UsbDebuggingStep from "../steps/UsbDebuggingStep";
 import SuccessStep from "../steps/SuccessStep";
 import UpdateStep from "../steps/UpdateStep";
 import RemoveStep from "../steps/RemoveStep";
-import { errorMessage, markDeviceFinalized, Me, SessionExpiredError } from "../lib/api";
+import { Me } from "../lib/api";
 
 const SUPPORT_EMAIL = "support@skywardos.com";
 
@@ -41,62 +41,9 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
   const [pendingSerial, setPendingSerial] = useState("");
   const [pendingModel, setPendingModel] = useState("");
   const [checkingExisting, setCheckingExisting] = useState(false);
-  const [sealing, setSealing] = useState(false);
-  const [sealError, setSealError] = useState<string | null>(null);
 
   const device = me?.device ?? null;
   const removeEnabled = me?.removeEnabled ?? false;
-  // Explicitly `=== true`. If migration 003 was never applied the backend omits the field
-  // entirely, and the safe reading of "unknown" is "not secured" — an under-claim that
-  // "Finish securing" resolves, rather than a green badge we can't actually stand behind.
-  const sealed = device?.finalized === true;
-
-  /**
-   * Re-send FINALIZE_SETUP to a device whose sealing never completed. Needs the phone
-   * reachable over ADB, so it carries the same 10-minute Developer Mode requirement as
-   * Update and Remove.
-   */
-  async function handleFinishSecuring() {
-    if (!device) return;
-    setSealing(true);
-    setSealError(null);
-    try {
-      try {
-        await invoke<string>("finalize_setup", { deviceId: device.serial });
-      } catch (err) {
-        setSealError(
-          `USB debugging could not be locked down. ${errorMessage(err)} — make sure the ` +
-            `phone's 10-minute Developer Mode window is open, then try again.`
-        );
-        return;
-      }
-
-      // The phone is sealed. Recording it is bookkeeping, and re-running this whole action
-      // is safe, so a failure here is a warning rather than a removal of the seal.
-      try {
-        await markDeviceFinalized(device.serial);
-      } catch (err) {
-        if (err instanceof SessionExpiredError) {
-          signOut(
-            "Your session expired. The phone was secured, but we couldn't record it — it " +
-              'will still show as "Not secured". Use "Finish securing" again after signing ' +
-              "in; it's safe to run twice."
-          );
-          return;
-        }
-        setSealError(
-          `The phone was secured, but we couldn't save that to your account ` +
-            `(${errorMessage(err)}). It will keep showing as "Not secured" — try this ` +
-            `button again, it's safe to run twice.`
-        );
-        return;
-      }
-
-      await refresh();
-    } finally {
-      setSealing(false);
-    }
-  }
 
   const backToList = () => {
     setView("list");
@@ -297,38 +244,8 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
                   <div className="device-name">{device.model || "Android device"}</div>
                   <div className="device-serial">{device.serial}</div>
                 </div>
-                <span className={`badge ${sealed ? "badge-success" : "badge-warning"}`}>
-                  {sealed ? "Protected" : "Not secured"}
-                </span>
+                <span className="badge badge-success">Protected</span>
               </div>
-
-              {/* Provisioned but never sealed: USB debugging is still open, so the app can
-                  be removed over ADB. This is the one device state worth shouting about. */}
-              {!sealed && (
-                <div className="alert alert-error" style={{ marginTop: 12 }}>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: "var(--destructive)", margin: "0 0 6px" }}>
-                    USB debugging is still open on this phone
-                  </p>
-                  <p style={{ margin: "0 0 12px", lineHeight: 1.6 }}>
-                    Setup finished, but the final lockdown step didn't complete. Until it does,
-                    the protection can be removed over USB. Connect the phone and finish now —
-                    you'll need to open SkywardBlocker on it, sign in, and start the 10-minute
-                    Developer Mode window first.
-                  </p>
-                  {sealError && (
-                    <p style={{ margin: "0 0 12px", color: "var(--destructive)" }}>{sealError}</p>
-                  )}
-                  <button className="btn btn-primary btn-sm" onClick={handleFinishSecuring} disabled={sealing}>
-                    {sealing ? (
-                      <>
-                        <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Securing…
-                      </>
-                    ) : (
-                      "Finish securing"
-                    )}
-                  </button>
-                </div>
-              )}
 
               <p className="text-xs text-muted" style={{ marginTop: 12, marginBottom: 0 }}>
                 Enrolled {new Date(device.enrolled_at).toLocaleDateString()}. One device per
@@ -374,8 +291,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
               <div>
                 <div className="action-title">Update the app</div>
                 <p className="action-detail">
-                  Push a newer SkywardBlocker build over USB while protection stays on. Needs the
-                  phone's 10-minute Developer Mode window.
+                  Push a newer SkywardBlocker build over USB while protection stays on.
                 </p>
               </div>
               <button className="btn btn-outline" onClick={() => setView("update")}>
@@ -388,7 +304,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
                 <div className="action-title">Remove the app</div>
                 <p className="action-detail">
                   {removeEnabled
-                    ? "Release device administration and uninstall SkywardBlocker. Needs the phone's 10-minute Developer Mode window."
+                    ? "Release device administration and uninstall SkywardBlocker."
                     : `Removal is switched off for your account. That's intentional — it's what makes the block hold. Email ${SUPPORT_EMAIL} if you need it enabled.`}
                 </p>
               </div>

@@ -19,18 +19,19 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [showWarningModal, setShowWarningModal] = useState(false);
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
 
-  async function handleUpdateConfirm() {
-    setShowWarningModal(false);
+  async function handleStartUpdate() {
+    if (!apkPath.trim()) {
+      setError("Please provide the full absolute path to the updated APK file.");
+      return;
+    }
     setIsUpdating(true);
     setError(null);
     setSuccess(false);
     setStatusText("Verifying device connection…");
 
-    // The device may have been unplugged (or dropped out of its 10-minute
-    // developer window) since it was selected — never push an APK blindly.
+    // The device may have been unplugged since it was selected — never push an APK blindly.
     const connection = await checkDeviceConnected(deviceId);
     if (!connection.connected) {
       setDisconnected(connection);
@@ -51,15 +52,6 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
     } finally {
       setIsUpdating(false);
     }
-  }
-
-  function handleStartUpdate() {
-    if (!apkPath.trim()) {
-      setError("Please provide the full absolute path to the updated APK file.");
-      return;
-    }
-    setError(null);
-    setShowWarningModal(true);
   }
 
   return (
@@ -162,48 +154,6 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
           </button>
         )}
       </div>
-
-      {/* Warning Modal */}
-      {showWarningModal && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0, 0, 0, 0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-          padding: 20,
-        }}>
-          <div className="card" style={{ maxWidth: 460, width: "100%", margin: 0 }}>
-            <div className="card-header">
-              <h3 style={{ margin: 0, color: "var(--foreground)", fontSize: 18 }}>Confirm Maintenance Mode</h3>
-            </div>
-            <div className="card-content">
-              <div style={{
-                padding: "12px 16px",
-                background: "oklch(0.75 0.15 85 / 0.1)",
-                border: "1px solid oklch(0.75 0.15 85 / 0.3)",
-                borderRadius: "var(--radius)",
-                marginBottom: 16,
-                fontSize: 13,
-                color: "var(--foreground)",
-                lineHeight: 1.5,
-              }}>
-                ⚠️ <strong>Requirement:</strong> Because USB Debugging is locked by default in Device Owner mode, ensure you have opened SkywardBlocker on your phone, logged in, and activated the <strong>10-minute Developer Mode window</strong> before continuing.
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                <button className="btn btn-outline" onClick={() => setShowWarningModal(false)}>
-                  Cancel
-                </button>
-                <button className="btn btn-primary" onClick={handleUpdateConfirm}>
-                  Proceed to Update
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {disconnected && (
         <DeviceDisconnectedModal

@@ -58,8 +58,7 @@ export default function UsbDebuggingStep({ onContinue, onCancel }: UsbDebuggingS
           <div className="alert alert-info" style={{ marginTop: 20 }}>
             <p style={{ margin: 0, lineHeight: 1.6 }}>
               Setup wipes nothing, but it does take over device administration. Back up anything
-              you care about first — and note that USB debugging gets sealed shut once setup
-              finishes, which is what stops it being switched off later.
+              you care about first.
             </p>
           </div>
         </div>

@@ -1,9 +1,9 @@
 /**
  * Thin client for the mdm-backend records that back the desktop UI.
  *
- * Supabase is the record of truth for the parent's single schedule and enrolled device:
- * USB debugging is sealed after enrolment, so the schedule cannot be read back off the
- * phone, and the app would otherwise forget everything on restart.
+ * Supabase is the record of truth for the parent's single schedule and enrolled device —
+ * the schedule can't be read back off the phone, so the app would otherwise forget
+ * everything on restart.
  */
 
 const BASE_URL = "https://mdm-backend-i4b0.onrender.com/api";
@@ -29,9 +29,6 @@ export interface EnrolledDevice {
   serial: string;
   model: string | null;
   enrolled_at: string;
-  /** Whether USB debugging was successfully sealed. False means the phone is provisioned
-   *  but still ADB-reachable — i.e. the protection can be removed with two adb commands. */
-  finalized: boolean;
 }
 
 export interface Me {
@@ -158,12 +155,6 @@ export function registerDevice(serial: string, model: string | null): Promise<En
   return request<EnrolledDevice>("/devices", {
     method: "POST",
     body: JSON.stringify({ serial, model }),
-  });
-}
-
-export function markDeviceFinalized(serial: string): Promise<EnrolledDevice> {
-  return request<EnrolledDevice>(`/devices/${encodeURIComponent(serial)}/finalized`, {
-    method: "POST",
   });
 }
 

@@ -128,7 +128,7 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
             }}>
               <h4 style={{ margin: "0 0 8px 0", color: "var(--destructive)", fontSize: 14 }}>Decommission Notice</h4>
               <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0, lineHeight: 1.5 }}>
-                To execute uninstallation securely, you must log into SkywardBlocker on your device and tap <strong>"Turn on Dev Mode for 10 minutes"</strong>. Once unlocked, clicking Remove will transmit an authorization intent to release Device Owner status before uninstalling.
+                Clicking Remove will transmit an authorization intent to release Device Owner status before uninstalling. Make sure the phone is connected via USB first.
               </p>
             </div>
           )}
@@ -148,8 +148,8 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
               {recordDropped && (
                 <p style={{ fontSize: 13, color: "var(--muted-foreground)", margin: "8px 0 0", lineHeight: 1.5 }}>
                   This phone has already been removed from your account, but SkywardBlocker is
-                  still installed and still protecting it. Open the phone's 10-minute Developer
-                  Mode window and try again. If you'd rather keep the protection, use{" "}
+                  still installed and still protecting it. Reconnect the phone and try again.
+                  If you'd rather keep the protection, use{" "}
                   <strong>Add Device → "Link existing device"</strong> to put it back on your
                   account.
                 </p>

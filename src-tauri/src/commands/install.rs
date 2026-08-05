@@ -3,7 +3,6 @@ use crate::adb;
 const PACKAGE_NAME: &str = "com.example.skywardblocker";
 const DEVICE_ADMIN_COMPONENT: &str = "com.example.skywardblocker/.admin.SkywardDeviceAdmin";
 const CLEAR_OWNER_ACTION: &str = "com.example.skywardblocker.CLEAR_OWNER";
-const FINALIZE_SETUP_ACTION: &str = "com.example.skywardblocker.FINALIZE_SETUP";
 
 /// Result of installation verification.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -99,10 +98,9 @@ pub async fn uninstall_app(app: tauri::AppHandle, device_id: String) -> Result<S
 
 /// Tauri command: Verify that SkywardBlocker is both installed and set as Device Owner.
 ///
-/// USB debugging is intentionally left enabled by the app throughout provisioning (see
-/// `finalize_setup` below) specifically so this check — and push_config/push_schedule/
-/// launch_app — can rely on ADB staying connected. A disconnection here is a real problem,
-/// not an expected side effect to paper over.
+/// USB debugging is intentionally left enabled by the app at all times, so this check —
+/// and push_config/push_schedule/launch_app — can rely on ADB staying connected. A
+/// disconnection here is a real problem, not an expected side effect to paper over.
 #[tauri::command]
 pub async fn verify_installation(
     app: tauri::AppHandle,
@@ -159,29 +157,6 @@ pub async fn verify_installation(
         success,
         message,
     })
-}
-
-/// Tauri command: Seal USB debugging once config/schedule have been pushed and the app
-/// launched. The app itself leaves debugging enabled until this broadcast arrives —
-/// see `DevicePolicyHelper.finalizeProvisioning()` on the Android side.
-#[tauri::command]
-pub async fn finalize_setup(app: tauri::AppHandle, device_id: String) -> Result<String, String> {
-    let output = adb::run_adb_for_device(
-        Some(&app),
-        &device_id,
-        &[
-            "shell",
-            "am",
-            "broadcast",
-            "-a",
-            FINALIZE_SETUP_ACTION,
-            "-n",
-            &format!("{}/.receiver.AdbCommandReceiver", PACKAGE_NAME),
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(format!("Setup finalized: {}", output.trim()))
 }
 
 /// Tauri command: Explicitly launch SkywardBlocker MainActivity over ADB.

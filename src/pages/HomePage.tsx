@@ -27,10 +27,9 @@ export default function HomePage({ me, loading, refresh, signOut, onGoToDevices 
   const [pushing, setPushing] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   /** The phone got the schedule but recording it failed — cosmetic, and deliberately not
-   *  shown as an error, because re-pushing costs another Developer Mode window. */
+   *  shown as an error, since the phone is already enforcing it either way. */
   const [pushWarning, setPushWarning] = useState<string | null>(null);
   const [pushed, setPushed] = useState(false);
-  const [showPushWarning, setShowPushWarning] = useState(false);
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
 
   if (creating) {
@@ -59,8 +58,7 @@ export default function HomePage({ me, loading, refresh, signOut, onGoToDevices 
   const schedule = me?.schedule ?? null;
   const device = me?.device ?? null;
 
-  async function handlePushConfirmed() {
-    setShowPushWarning(false);
+  async function handlePush() {
     if (!schedule || !device) return;
 
     setPushing(true);
@@ -91,14 +89,13 @@ export default function HomePage({ me, loading, refresh, signOut, onGoToDevices 
       } catch (err) {
         setPushError(
           `The schedule could not be sent to the phone (${errorMessage(err)}). Check that ` +
-            `the 10-minute Developer Mode window is still open, then try again.`
+            `it's connected via USB, then try again.`
         );
         return;
       }
 
       // The phone has the schedule from here on. Everything below is bookkeeping, and a
-      // failure must not read as "the push failed" — re-pushing costs the parent another
-      // Developer Mode window, so it is not a free retry.
+      // failure must not read as "the push failed".
       try {
         await markSchedulePushed(schedule.id);
       } catch (err) {
@@ -153,7 +150,7 @@ export default function HomePage({ me, loading, refresh, signOut, onGoToDevices 
               {device ? (
                 <button
                   className="btn btn-primary"
-                  onClick={() => setShowPushWarning(true)}
+                  onClick={handlePush}
                   disabled={pushing}
                 >
                   {pushing ? (
@@ -192,37 +189,6 @@ export default function HomePage({ me, loading, refresh, signOut, onGoToDevices 
         </div>
       )}
 
-      {showPushWarning && (
-        <div className="modal-backdrop">
-          <div className="card" style={{ maxWidth: 480, width: "100%", margin: 0 }}>
-            <div className="card-header">
-              <h3 style={{ margin: 0, color: "var(--foreground)", fontSize: 18 }}>
-                Before you push
-              </h3>
-            </div>
-            <div className="card-content">
-              <div className="alert alert-warning" style={{ marginBottom: 16 }}>
-                ⚠️ <strong>Requirement:</strong> USB Debugging is locked down once a device is
-                protected. Open SkywardBlocker on the phone, log in, and activate the{" "}
-                <strong>10-minute Developer Mode window</strong> before continuing.
-              </div>
-              <p className="text-sm text-muted" style={{ marginTop: 0 }}>
-                If you just finished setting the device up, the schedule was already pushed for
-                you and you can skip this.
-              </p>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                <button className="btn btn-outline" onClick={() => setShowPushWarning(false)}>
-                  Cancel
-                </button>
-                <button className="btn btn-primary" onClick={handlePushConfirmed}>
-                  Push now
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {disconnected && (
         <DeviceDisconnectedModal
           status={disconnected}
@@ -254,7 +220,7 @@ function EmptyScheduleCard({ onCreate, hasDevice }: { onCreate: () => void; hasD
         {!hasDevice && (
           <p className="text-xs text-muted" style={{ marginTop: 16 }}>
             Tip: create the schedule before adding your device and it will be applied
-            automatically during setup — no Developer Mode window needed.
+            automatically during setup.
           </p>
         )}
       </div>
