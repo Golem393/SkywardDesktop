@@ -10,9 +10,12 @@ interface AuthResponse {
 
 interface LoginStepProps {
   onLogin: (email: string) => void;
+  /** Shown above the form when the user lands here after an auto sign-out (e.g. an
+   *  expired session), so it's clear why they're being asked to log in again. */
+  message?: string | null;
 }
 
-export default function LoginStep({ onLogin }: LoginStepProps) {
+export default function LoginStep({ onLogin, message }: LoginStepProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -74,6 +77,21 @@ export default function LoginStep({ onLogin }: LoginStepProps) {
             </p>
           </div>
           <div className="card-content">
+            {message && (
+              <div
+                style={{
+                  background: "oklch(0.6 0.22 27 / 0.08)",
+                  border: "1px solid oklch(0.6 0.22 27 / 0.2)",
+                  borderRadius: "calc(var(--radius) - 2px)",
+                  padding: "10px 14px",
+                  fontSize: 13,
+                  color: "var(--destructive)",
+                  marginBottom: 16,
+                }}
+              >
+                {message}
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label className="label" htmlFor="login-email">Email</label>

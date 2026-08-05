@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { createSchedule } from "../lib/api";
+import { ApiError, createSchedule, errorMessage, SessionExpiredError } from "../lib/api";
 import {
   DAYS,
   HOURS,
@@ -25,9 +25,10 @@ type Duration = "week" | "custom";
 interface CreateSchedulePageProps {
   onCreated: () => Promise<void> | void;
   onCancel: () => void;
+  signOut: (reason?: string) => void;
 }
 
-export default function CreateSchedulePage({ onCreated, onCancel }: CreateSchedulePageProps) {
+export default function CreateSchedulePage({ onCreated, onCancel, signOut }: CreateSchedulePageProps) {
   const [startHour, setStartHour] = useState(21);
   const [startMinute, setStartMinute] = useState(0);
   const [endHour, setEndHour] = useState(7);
@@ -84,7 +85,21 @@ export default function CreateSchedulePage({ onCreated, onCancel }: CreateSchedu
       });
       await onCreated();
     } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
+      if (err instanceof SessionExpiredError) {
+        // Nothing was created — safe to just sign out rather than leave the user stuck
+        // re-submitting a form against a token that will never work.
+        signOut("Your session expired. Please sign in again.");
+        return;
+      }
+      if (err instanceof ApiError && err.status === 409) {
+        // One schedule per account, and POST /schedule isn't idempotent: a submit whose
+        // response was lost still created the row, and the retry comes back 409. Re-read
+        // the account instead of showing "already exists" as if the user did something
+        // wrong — the schedule they just asked for is there.
+        await onCreated();
+        return;
+      }
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }

@@ -29,6 +29,9 @@ export interface EnrolledDevice {
   serial: string;
   model: string | null;
   enrolled_at: string;
+  /** Whether USB debugging was successfully sealed. False means the phone is provisioned
+   *  but still ADB-reachable — i.e. the protection can be removed with two adb commands. */
+  finalized: boolean;
 }
 
 export interface Me {
@@ -61,8 +64,52 @@ export function hasAccessToken(): boolean {
   return accessToken !== null;
 }
 
+/**
+ * Thrown when the backend rejects the bearer token — expired or otherwise dead. Supabase
+ * access tokens last ~1 hour and this app does not renew them, so this is the normal way a
+ * long-lived session ends. Callers that catch it should sign the user out rather than just
+ * showing an inline error, since retrying with the same token will never succeed.
+ */
+export class SessionExpiredError extends Error {}
+
+/** Any other non-2xx response. Carries the status so callers can act on specific ones —
+ *  notably 409, which `POST /schedule` and `POST /devices` return for "already exists". */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+/** Normalise an unknown thrown value into something displayable. */
+export function errorMessage(err: unknown): string {
+  return String(err instanceof Error ? err.message : err);
+}
+
+/**
+ * Retry `fn` with a fixed delay between attempts.
+ *
+ * Gives up immediately on SessionExpiredError: a dead token fails identically on every
+ * attempt, so retrying only postpones the sign-out.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  { attempts = 3, delayMs = 1500 }: { attempts?: number; delayMs?: number } = {}
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (err instanceof SessionExpiredError) break;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (!accessToken) throw new Error("Not signed in. Please sign out and back in.");
+  if (!accessToken) throw new SessionExpiredError("Not signed in. Please sign in again.");
 
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
@@ -84,7 +131,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       // Non-JSON error body — keep the status-code fallback.
     }
-    throw new Error(detail);
+    if (res.status === 401) throw new SessionExpiredError(detail);
+    throw new ApiError(detail, res.status);
   }
 
   if (res.status === 204) return undefined as T;
@@ -110,6 +158,12 @@ export function registerDevice(serial: string, model: string | null): Promise<En
   return request<EnrolledDevice>("/devices", {
     method: "POST",
     body: JSON.stringify({ serial, model }),
+  });
+}
+
+export function markDeviceFinalized(serial: string): Promise<EnrolledDevice> {
+  return request<EnrolledDevice>(`/devices/${encodeURIComponent(serial)}/finalized`, {
+    method: "POST",
   });
 }
 

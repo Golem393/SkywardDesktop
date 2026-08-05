@@ -2,7 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import CreateSchedulePage from "./CreateSchedulePage";
-import { markSchedulePushed, Me, Schedule } from "../lib/api";
+import { errorMessage, markSchedulePushed, Me, Schedule, SessionExpiredError } from "../lib/api";
 import { formatDate, formatDays, formatEndDate, formatTime, spansMidnight } from "../lib/schedule";
 import DeviceDisconnectedModal, {
   checkDeviceConnected,
@@ -15,13 +15,20 @@ interface HomePageProps {
   me: Me | null;
   loading: boolean;
   refresh: () => Promise<void>;
+  /** Ends the session and returns to login. Called directly (not just via refresh()) when
+   *  a user-initiated action hits a dead token, so it fails as clearly as the Refresh button
+   *  does rather than sitting on an inline error the user can't recover from. */
+  signOut: (reason?: string) => void;
   onGoToDevices: () => void;
 }
 
-export default function HomePage({ me, loading, refresh, onGoToDevices }: HomePageProps) {
+export default function HomePage({ me, loading, refresh, signOut, onGoToDevices }: HomePageProps) {
   const [creating, setCreating] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
+  /** The phone got the schedule but recording it failed — cosmetic, and deliberately not
+   *  shown as an error, because re-pushing costs another Developer Mode window. */
+  const [pushWarning, setPushWarning] = useState<string | null>(null);
   const [pushed, setPushed] = useState(false);
   const [showPushWarning, setShowPushWarning] = useState(false);
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
@@ -34,6 +41,7 @@ export default function HomePage({ me, loading, refresh, onGoToDevices }: HomePa
           setCreating(false);
         }}
         onCancel={() => setCreating(false)}
+        signOut={signOut}
       />
     );
   }
@@ -57,6 +65,7 @@ export default function HomePage({ me, loading, refresh, onGoToDevices }: HomePa
 
     setPushing(true);
     setPushError(null);
+    setPushWarning(null);
     setPushed(false);
 
     const connection = await checkDeviceConnected(device.serial);
@@ -67,23 +76,51 @@ export default function HomePage({ me, loading, refresh, onGoToDevices }: HomePa
     }
 
     try {
-      await invoke<string>("push_schedule", {
-        deviceId: device.serial,
-        lockStartHour: schedule.lock_start_hour,
-        lockStartMinute: schedule.lock_start_minute,
-        lockEndHour: schedule.lock_end_hour,
-        lockEndMinute: schedule.lock_end_minute,
-        daysMask: schedule.days_mask,
-        activeFrom: new Date(schedule.active_from).getTime(),
-        activeUntil: new Date(schedule.active_until).getTime(),
-        timezoneId: schedule.timezone_id,
-      });
-      // Only record the push once the device has actually acknowledged it.
-      await markSchedulePushed(schedule.id);
+      try {
+        await invoke<string>("push_schedule", {
+          deviceId: device.serial,
+          lockStartHour: schedule.lock_start_hour,
+          lockStartMinute: schedule.lock_start_minute,
+          lockEndHour: schedule.lock_end_hour,
+          lockEndMinute: schedule.lock_end_minute,
+          daysMask: schedule.days_mask,
+          activeFrom: new Date(schedule.active_from).getTime(),
+          activeUntil: new Date(schedule.active_until).getTime(),
+          timezoneId: schedule.timezone_id,
+        });
+      } catch (err) {
+        setPushError(
+          `The schedule could not be sent to the phone (${errorMessage(err)}). Check that ` +
+            `the 10-minute Developer Mode window is still open, then try again.`
+        );
+        return;
+      }
+
+      // The phone has the schedule from here on. Everything below is bookkeeping, and a
+      // failure must not read as "the push failed" — re-pushing costs the parent another
+      // Developer Mode window, so it is not a free retry.
+      try {
+        await markSchedulePushed(schedule.id);
+      } catch (err) {
+        if (err instanceof SessionExpiredError) {
+          signOut(
+            "Your session expired. The schedule was applied to the phone and is being " +
+              'enforced, but we couldn\'t record it — it will still show as "Not pushed ' +
+              'yet" after you sign in. You do not need to push again.'
+          );
+          return;
+        }
+        setPushed(true);
+        setPushWarning(
+          `The schedule is on the phone and is being enforced, but we couldn't record that ` +
+            `(${errorMessage(err)}). It will keep showing as "Not pushed yet" — that's ` +
+            `cosmetic only, and pushing again is safe if you'd rather clear it.`
+        );
+        return;
+      }
+
       await refresh();
       setPushed(true);
-    } catch (err) {
-      setPushError(String(err instanceof Error ? err.message : err));
     } finally {
       setPushing(false);
     }
@@ -137,6 +174,12 @@ export default function HomePage({ me, loading, refresh, onGoToDevices }: HomePa
             {pushed && (
               <div className="alert alert-success" style={{ marginTop: 16 }}>
                 <p style={{ margin: 0, fontWeight: 600 }}>✓ Schedule pushed to the device.</p>
+              </div>
+            )}
+
+            {pushWarning && (
+              <div className="alert alert-warning" style={{ marginTop: 16 }}>
+                <p style={{ margin: 0, lineHeight: 1.5 }}>⚠️ {pushWarning}</p>
               </div>
             )}
 

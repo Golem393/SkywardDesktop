@@ -4,7 +4,16 @@ import "./App.css";
 import LoginStep from "./steps/LoginStep";
 import HomePage from "./pages/HomePage";
 import DevicesPage from "./pages/DevicesPage";
-import { fetchMe, Me, setAccessToken } from "./lib/api";
+import { errorMessage, fetchMe, Me, SessionExpiredError, setAccessToken } from "./lib/api";
+
+declare global {
+  interface Window {
+    /** Dev-only: corrupts the in-memory session token so the next authenticated call
+     *  401s, without waiting out the real ~1hr Supabase JWT expiry. Only defined in dev
+     *  builds — see the `import.meta.env.DEV` guard below. */
+    __expireSession?: () => void;
+  }
+}
 
 type Route = "home" | "devices";
 
@@ -31,6 +40,16 @@ const NAV: { key: Route; label: string; icon: ReactNode }[] = [
   },
 ];
 
+if (import.meta.env.DEV) {
+  // From the webview devtools console (right-click → Inspect): window.__expireSession()
+  // then click Refresh / Push Schedule / Create Schedule / Remove Device to see the
+  // session-expiry handling without waiting out a real token.
+  window.__expireSession = () => {
+    setAccessToken("dev-forced-expiry-" + Date.now());
+    console.log("[dev] Session token corrupted — the next authenticated call will 401.");
+  };
+}
+
 const PAGE_COPY: Record<Route, { title: string; subtitle: string }> = {
   home: {
     title: "Home",
@@ -50,6 +69,20 @@ function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+
+  /** Clears everything tied to the current login. Shared by the manual "Sign out" button
+   *  and by an expired-session auto-logout — the two differ only in the message left for
+   *  the login screen to show. */
+  const signOut = useCallback((reason?: string) => {
+    setAccessToken(null);
+    setEmail("");
+    setSignedIn(false);
+    setMe(null);
+    setLoadError(null);
+    setRoute("home");
+    setSessionMessage(reason ?? null);
+  }, []);
 
   /** Re-read the account record. Every mutation funnels through this so Home and Devices
    *  never drift from what the backend actually holds. */
@@ -59,11 +92,19 @@ function App() {
     try {
       setMe(await fetchMe());
     } catch (err) {
-      setLoadError(String(err instanceof Error ? err.message : err));
+      if (err instanceof SessionExpiredError) {
+        // Retrying with the same dead token can never succeed, and leaving the last
+        // successful fetch on screen (behind an error banner) reads as current data when
+        // it may no longer be — e.g. a schedule deleted server-side after the last
+        // successful refresh. Sign out fully rather than just showing an error.
+        signOut("Your session expired. Please sign in again.");
+        return;
+      }
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [signOut]);
 
   useEffect(() => {
     if (signedIn) refresh();
@@ -75,17 +116,8 @@ function App() {
     setRoute("home");
   };
 
-  const handleSignOut = () => {
-    setAccessToken(null);
-    setEmail("");
-    setSignedIn(false);
-    setMe(null);
-    setLoadError(null);
-    setRoute("home");
-  };
-
   if (!signedIn) {
-    return <LoginStep onLogin={handleLogin} />;
+    return <LoginStep onLogin={handleLogin} message={sessionMessage} />;
   }
 
   return (
@@ -117,7 +149,7 @@ function App() {
             )}
             Refresh
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={handleSignOut}>
+          <button className="btn btn-ghost btn-sm" onClick={() => signOut()}>
             Sign out
           </button>
         </div>
@@ -159,10 +191,10 @@ function App() {
 
             <div className="animate-in" key={route}>
               {route === "home" && (
-                <HomePage me={me} loading={loading} refresh={refresh} onGoToDevices={() => setRoute("devices")} />
+                <HomePage me={me} loading={loading} refresh={refresh} signOut={signOut} onGoToDevices={() => setRoute("devices")} />
               )}
               {route === "devices" && (
-                <DevicesPage me={me} loading={loading} refresh={refresh} />
+                <DevicesPage me={me} loading={loading} refresh={refresh} signOut={signOut} />
               )}
             </div>
           </main>

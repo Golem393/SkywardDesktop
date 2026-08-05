@@ -1002,3 +1002,19 @@ body {
   color: var(--muted-foreground);
   margin-bottom: 6px;
 }
+
+/* ── Inline Link-styled Button ───────────────────────────── */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  opacity: 0.8;
+}

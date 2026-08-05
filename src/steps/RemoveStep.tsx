@@ -4,6 +4,7 @@ import DeviceDisconnectedModal, {
   checkDeviceConnected,
   DeviceConnectionStatus,
 } from "../components/DeviceDisconnectedModal";
+import { errorMessage, SessionExpiredError, unregisterDevice } from "../lib/api";
 
 interface RemoveStepProps {
   deviceId: string;
@@ -11,16 +12,29 @@ interface RemoveStepProps {
   onComplete: () => void;
   onCancel: () => void;
   onBackToDevices: () => void;
+  signOut: (reason?: string) => void;
 }
 
-export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices }: RemoveStepProps) {
+export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices, signOut }: RemoveStepProps) {
   const [isRemoving, setIsRemoving] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [disconnected, setDisconnected] = useState<DeviceConnectionStatus | null>(null);
+  // Whether the account record has already been dropped. Changes what a subsequent phone
+  // failure means, so the error copy below branches on it.
+  const [recordDropped, setRecordDropped] = useState(false);
 
+  /**
+   * Drop the account record first, then de-provision the phone.
+   *
+   * The order matters. If the phone were wiped first and the DELETE then failed, the
+   * account would still show this device as "Protected" — a parent believing their child
+   * is covered when the app is gone — and `devices_one_per_user` would block re-enrolling
+   * it. Doing the DELETE first inverts that: the failure leaves a phone that is still
+   * protected but unlisted, which "Link existing device" already recovers.
+   */
   async function handleRemoveConfirm() {
     setShowWarningModal(false);
     setIsRemoving(true);
@@ -38,14 +52,30 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
       return;
     }
 
-    setStatusText("Releasing Device Owner privileges and uninstalling app…");
+    // Nothing has touched the phone yet, so an expired session here is a clean failure.
+    setStatusText("Removing this phone from your account…");
+    try {
+      await unregisterDevice(deviceId);
+      setRecordDropped(true);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        signOut("Your session expired before anything was changed. Nothing was removed from the phone — sign in again and retry.");
+        return;
+      }
+      // Most likely a 403: removal is switched off for the account server-side.
+      setError(errorMessage(err));
+      setStatusText("");
+      setIsRemoving(false);
+      return;
+    }
 
+    setStatusText("Releasing Device Owner privileges and uninstalling app…");
     try {
       await invoke<string>("uninstall_app", { deviceId });
       setSuccess(true);
       setStatusText("");
     } catch (err) {
-      setError(String(err));
+      setError(errorMessage(err));
       setStatusText("");
     } finally {
       setIsRemoving(false);
@@ -115,6 +145,15 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
                 <span style={{ fontWeight: 600, fontSize: 14, color: "var(--destructive)" }}>Removal Failed</span>
               </div>
               <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0 }}>{error}</p>
+              {recordDropped && (
+                <p style={{ fontSize: 13, color: "var(--muted-foreground)", margin: "8px 0 0", lineHeight: 1.5 }}>
+                  This phone has already been removed from your account, but SkywardBlocker is
+                  still installed and still protecting it. Open the phone's 10-minute Developer
+                  Mode window and try again. If you'd rather keep the protection, use{" "}
+                  <strong>Add Device → "Link existing device"</strong> to put it back on your
+                  account.
+                </p>
+              )}
             </div>
           )}
 
