@@ -23,4 +23,8 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+# APK downloads are streamed and hashed as they arrive, so a damaged file is caught before
+# it ever reaches `adb install`.
+futures-util = "0.3"
+sha2 = "0.10"

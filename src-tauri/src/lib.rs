@@ -11,6 +11,7 @@ use commands::install::{
     clear_device_owner, install_apk, launch_app, set_device_owner, uninstall_app,
     verify_installation,
 };
+use commands::release::{download_apk, get_installed_version};
 use commands::schedule::push_schedule;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -31,7 +32,9 @@ pub fn run() {
             verify_subscription,
             push_config,
             launch_app,
-            push_schedule
+            push_schedule,
+            download_apk,
+            get_installed_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

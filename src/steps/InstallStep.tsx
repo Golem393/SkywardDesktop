@@ -6,12 +6,15 @@ import DeviceDisconnectedModal, {
 } from "../components/DeviceDisconnectedModal";
 import {
   errorMessage,
+  fetchLatestRelease,
   markSchedulePushed,
   registerDevice,
+  Release,
   Schedule,
   SessionExpiredError,
   withRetry,
 } from "../lib/api";
+import { downloadCurrentRelease, DownloadProgress, formatBytes } from "../lib/release";
 
 interface InstallStepProps {
   deviceId: string;
@@ -25,7 +28,14 @@ interface InstallStepProps {
   signOut: (reason?: string) => void;
 }
 
-type Phase = "prerequisites" | "installing" | "activating" | "configuring" | "done" | "error";
+type Phase =
+  | "prerequisites"
+  | "downloading"
+  | "installing"
+  | "activating"
+  | "configuring"
+  | "done"
+  | "error";
 
 interface PhaseError {
   title: string;
@@ -46,10 +56,19 @@ const ERROR_MAP: Record<string, PhaseError> = {
     message: "Unable to verify device readiness.",
     suggestion: "Ensure the device is connected via USB with USB debugging enabled, then try again.",
   },
+  download: {
+    title: "Download Failed",
+    message: "SkywardBlocker could not be downloaded.",
+    suggestion:
+      "Check your internet connection and press Retry. Nothing has been changed on the phone yet.",
+  },
   apk_install: {
     title: "Installation Failed",
-    message: "The APK could not be installed on the device.",
-    suggestion: "Verify the APK file path is correct and the file exists. Make sure there is enough storage on the device.",
+    message: "The app could not be installed on the device.",
+    suggestion:
+      "Make sure the phone has enough free storage and stays connected, then press Retry. " +
+      "If the phone already has a version of SkywardBlocker installed that was signed " +
+      "differently, it must be uninstalled first.",
   },
   device_owner: {
     title: "Activation Failed",
@@ -123,7 +142,10 @@ function recallAccounts(deviceId: string): string[] {
 export default function InstallStep({ deviceId, deviceModel, schedule, onComplete, onCancel, onBackToDevices, signOut }: InstallStepProps) {
   const [phase, setPhase] = useState<Phase>("prerequisites");
   const [phaseError, setPhaseError] = useState<PhaseError | null>(null);
-  const [apkPath, setApkPath] = useState("");
+  /** The build to install, fetched for display. The bytes are fetched at install time. */
+  const [release, setRelease] = useState<Release | null>(null);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [prereqOk, setPrereqOk] = useState(false);
   const [prereqMessages, setPrereqMessages] = useState<{ ok: boolean; text: string }[]>([]);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -155,7 +177,30 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
   // Auto-run prerequisites check
   useEffect(() => {
     checkPrereqs();
+    loadRelease();
   }, []);
+
+  /**
+   * Look up which build will be installed, so the parent can see it before committing.
+   *
+   * Only the metadata — the download itself waits until they press Start, since the signed
+   * URL attached here expires in minutes and account sign-out can sit between the two.
+   * A failure is recorded but doesn't block the prerequisites display; it's re-surfaced on
+   * the Start button, which stays disabled until this succeeds.
+   */
+  async function loadRelease() {
+    setReleaseError(null);
+    try {
+      setRelease(await withRetry(fetchLatestRelease));
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        signOut("Your session expired. Please sign in again to continue setup.");
+        return;
+      }
+      setRelease(null);
+      setReleaseError(errorMessage(err));
+    }
+  }
 
   /**
    * Confirm the device is still connected before touching it.
@@ -269,14 +314,6 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
   async function startInstallation() {
     if (isInstalling) return;
-    if (!apkPath.trim()) {
-      setPhaseError({
-        title: "Missing APK Path",
-        message: "No APK file path was provided.",
-        suggestion: "Enter the full path to your SkywardBlocker APK file before starting the installation.",
-      });
-      return;
-    }
     setPhaseError(null);
     setStatusText("Verifying device connection…");
     pendingExpiry.current = null;
@@ -284,11 +321,42 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     if (!(await ensureConnected())) return;
 
     setIsInstalling(true);
+
+    // Phase 1: Fetch the APK.
+    //
+    // Deliberately before touching the phone: a download failure at this point has changed
+    // nothing on the device, so Retry is genuinely free. Doing it after provisioning began
+    // would leave a half-set-up phone if the network dropped.
+    setPhase("downloading");
+    setDownloadProgress(null);
+    setStatusText("Downloading SkywardBlocker…");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    let apkPath: string;
+    try {
+      const downloaded = await downloadCurrentRelease(setDownloadProgress);
+      apkPath = downloaded.apkPath;
+      // The download re-fetches the release, so this may be newer than what was shown on
+      // mount. Reflect that rather than reporting a version we didn't install.
+      setRelease(downloaded.release);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setIsInstalling(false);
+        setStatusText("");
+        signOut("Your session expired before setup began. Please sign in and start again — nothing on the phone was changed.");
+        return;
+      }
+      setPhaseError({ ...ERROR_MAP.download, message: `${ERROR_MAP.download.message} ${errorMessage(err)}` });
+      setPhase("error");
+      setIsInstalling(false);
+      setStatusText("");
+      return;
+    }
+
     setPhase("installing");
     setStatusText("Installing SkywardBlocker on your device…");
-    await new Promise((resolve) => setTimeout(resolve, 50));
     try {
-      await invoke<string>("install_apk", { deviceId, apkPath: apkPath.trim() });
+      await invoke<string>("install_apk", { deviceId, apkPath });
     } catch (err) {
       setPhaseError({ ...ERROR_MAP.apk_install, message: `${ERROR_MAP.apk_install.message} ${String(err)}` });
       setPhase("error");
@@ -297,7 +365,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       return;
     }
 
-    // Phase 2: Set Device Owner
+    // Phase 3: Set Device Owner
     //
     // Android takes a while to stop reporting freshly-removed accounts to the device
     // policy service, and set_device_owner sits in a retry loop for up to ~90s waiting
@@ -341,7 +409,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       return;
     }
 
-    // Phase 3: Push Configuration & Schedule
+    // Phase 4: Push Configuration & Schedule
     setPhase("configuring");
     setStatusText("Configuring and launching SkywardBlocker…");
     try {
@@ -401,7 +469,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       // Non-fatal — continue
     }
 
-    // Phase 4: Verify installation succeeded
+    // Phase 5: Verify installation succeeded
     setStatusText("Verifying installation…");
     try {
       const res = await invoke<VerificationResult>("verify_installation", { deviceId });
@@ -437,7 +505,8 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
   const phaseSteps = [
     { key: "prerequisites", label: "Check prerequisites" },
-    { key: "installing", label: "Install APK" },
+    { key: "downloading", label: "Download SkywardBlocker" },
+    { key: "installing", label: "Install on device" },
     { key: "activating", label: "Activate Device Owner" },
     { key: "configuring", label: "Configure & launch app" },
     { key: "done", label: "Complete" },
@@ -609,21 +678,71 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
             </div>
           )}
 
-          {/* APK path input — only show during prerequisites phase */}
+          {/* Which build is about to be installed. Replaces the old "type an APK path"
+              field — the app fetches its own copy, so the parent only needs to see what
+              they're getting, not go and find it. */}
           {phase === "prerequisites" && (
             <div style={{ marginBottom: 16 }}>
-              <label className="label">APK file path</label>
-              <div className="flex gap-2">
-                <input
-                  className="input flex-1"
-                  type="text"
-                  placeholder="/path/to/skywardblocker.apk"
-                  value={apkPath}
-                  onChange={(e) => setApkPath(e.target.value)}
-                />
+              <label className="label">Version to install</label>
+              {release ? (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  padding: "12px 16px",
+                  borderRadius: "calc(var(--radius) - 2px)",
+                  background: "oklch(0.71 0.08 247 / 0.06)",
+                  border: "1px solid oklch(0.71 0.08 247 / 0.15)",
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "var(--foreground)" }}>
+                      SkywardBlocker {release.version_name}
+                    </div>
+                    {release.release_notes && (
+                      <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 4, lineHeight: 1.5 }}>
+                        {release.release_notes}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--muted-foreground)", whiteSpace: "nowrap" }}>
+                    {formatBytes(release.size_bytes)}
+                  </span>
+                </div>
+              ) : releaseError ? (
+                <div className="alert alert-warning" style={{ marginTop: 0 }}>
+                  <p style={{ margin: "0 0 10px", fontSize: 13, lineHeight: 1.5 }}>
+                    ⚠️ Couldn't check for the latest version ({releaseError}).
+                  </p>
+                  <button className="btn btn-outline" onClick={loadRelease}>
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted mt-2">Checking for the latest version…</p>
+              )}
+            </div>
+          )}
+
+          {/* Download progress. The slowest step on a poor connection, so it gets a real
+              bar rather than the shared indeterminate spinner above. */}
+          {phase === "downloading" && downloadProgress && downloadProgress.total > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{
+                height: 6,
+                borderRadius: 3,
+                background: "oklch(0.71 0.08 247 / 0.12)",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${Math.min(100, (downloadProgress.downloaded / downloadProgress.total) * 100)}%`,
+                  background: "var(--primary)",
+                  transition: "width 0.2s ease-out",
+                }} />
               </div>
               <p className="text-xs text-muted mt-2">
-                Enter the absolute path to your SkywardBlocker APK file.
+                {formatBytes(downloadProgress.downloaded)} of {formatBytes(downloadProgress.total)}
               </p>
             </div>
           )}
@@ -723,7 +842,10 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                 color: "var(--muted-foreground)",
                 lineHeight: 1.5,
                 paddingLeft: 38,
-              }}>SkywardBlocker has been installed and activated on your device. You can now proceed to the next step.</p>
+              }}>
+                SkywardBlocker{release ? ` ${release.version_name}` : ""} has been installed and
+                activated on your device. You can now proceed to the next step.
+              </p>
             </div>
           )}
 
@@ -797,7 +919,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
               )}
               <button
                 className="btn btn-primary"
-                disabled={!prereqOk || !apkPath.trim() || isInstalling}
+                disabled={!prereqOk || !release || isInstalling}
                 onClick={startInstallation}
               >
                 Start Installation
@@ -808,7 +930,18 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
             </>
           )}
           {phase === "error" && (
-            <button className="btn btn-outline" onClick={() => { setPhase("prerequisites"); setPhaseError(null); setIsInstalling(false); }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => {
+                setPhase("prerequisites");
+                setPhaseError(null);
+                setIsInstalling(false);
+                setDownloadProgress(null);
+                // A download that failed on an expired signed URL only recovers with a
+                // fresh release record, so Retry refetches rather than reusing the old one.
+                loadRelease();
+              }}
+            >
               Retry
             </button>
           )}

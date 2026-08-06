@@ -31,6 +31,23 @@ export interface EnrolledDevice {
   enrolled_at: string;
 }
 
+/**
+ * The SkywardBlocker build the desktop app should install.
+ *
+ * `download_url` is a short-lived signed URL (~10 minutes) over a private bucket, so it is
+ * fetched immediately before a download rather than held onto — a release fetched when a
+ * screen mounted may no longer be downloadable by the time the parent presses the button.
+ */
+export interface Release {
+  version_code: number;
+  version_name: string;
+  sha256: string;
+  size_bytes: number;
+  release_notes: string | null;
+  released_at: string;
+  download_url: string;
+}
+
 export interface Me {
   email: string | null;
   subscriptionStatus: string | null;
@@ -138,6 +155,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export function fetchMe(): Promise<Me> {
   return request<Me>("/me");
+}
+
+/** The current published build, with a freshly signed download URL. 404 (ApiError) when
+ *  nothing has been published yet. */
+export function fetchLatestRelease(): Promise<Release> {
+  return request<Release>("/releases/latest");
 }
 
 export function createSchedule(draft: ScheduleDraft): Promise<Schedule> {

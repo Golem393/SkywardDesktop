@@ -182,6 +182,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
         onComplete={backToList}
         onCancel={backToList}
         onBackToDevices={backToList}
+        signOut={signOut}
       />
     );
   }
