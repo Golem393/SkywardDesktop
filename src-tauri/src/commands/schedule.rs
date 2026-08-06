@@ -3,7 +3,7 @@ use tauri::AppHandle;
 
 /// Tauri command: Push the locked-hours schedule to the installed Android app via ADB
 /// broadcast. Kept as a sibling command to `push_config` rather than merged into it —
-/// schedule and network/DNS config are independent concerns pushed at different times
+/// schedule and app config are independent concerns pushed at different times
 /// (the schedule is pushed from the Home page, config only during enrolment).
 ///
 /// `days_mask` is a weekday bitmask (bit 0 = Sunday … bit 6 = Saturday). `active_from` and
