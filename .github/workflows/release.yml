@@ -68,6 +68,47 @@ jobs:
 
       - run: npm ci
 
+      # The git tag is the single source of truth for the version. tauri.conf.json
+      # reads its version from package.json, so writing it here is enough for the
+      # bundle, the installer filenames and the version the updater compares.
+      # Runs after `npm ci` because npm ci rejects a package.json whose version
+      # has drifted from package-lock.json.
+      - name: Set version from tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.${{ github.run_number }}"
+          fi
+
+          # MSI and .app reject anything that isn't strictly x.y.z, so fail here
+          # rather than three minutes into a Rust build.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a x.y.z version. Tag as e.g. v1.2.3."
+            exit 1
+          fi
+          echo "Building version $VERSION"
+
+          node -e '
+            const fs = require("fs");
+            const version = process.argv[1];
+
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = version;
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+
+            // Only the version under [package] — dependency versions must not move.
+            const cargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+            const patched = cargo.replace(
+              /(\[package\][\s\S]*?\nversion\s*=\s*")[^"]*(")/,
+              `$1${version}$2`,
+            );
+            if (patched === cargo) throw new Error("Could not patch version in Cargo.toml");
+            fs.writeFileSync("src-tauri/Cargo.toml", patched);
+          ' "$VERSION"
+
       # Pulls Google's platform-tools into src-tauri/resources so ADB ships
       # inside the installer. Also runs as tauri.conf.json's beforeBuildCommand,
       # but running it here surfaces download failures as their own step.
@@ -75,8 +116,13 @@ jobs:
         run: npm run setup:adb
 
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the updater artifacts. Without these the build still succeeds but emits
+          # no .sig files, and every client would reject the update as unverifiable.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}-dev', github.run_number) }}
           releaseName: Skyward Installer ${{ github.ref_type == 'tag' && github.ref_name || '(dev build)' }}
@@ -84,3 +130,169 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Hand the bundles to the publish job. The macOS universal build lands under a
+      # target-specific directory, hence the second path.
+      - name: Collect bundles
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          mkdir -p staging
+          find src-tauri/target/release/bundle \
+               src-tauri/target/universal-apple-darwin/release/bundle \
+               -type f \
+               \( -name '*.AppImage' -o -name '*.AppImage.sig' \
+               -o -name '*.deb' \
+               -o -name '*-setup.exe' -o -name '*-setup.exe.sig' \
+               -o -name '*.msi' \
+               -o -name '*.dmg' \
+               -o -name '*.app.tar.gz' -o -name '*.app.tar.gz.sig' \) \
+               -exec cp {} staging/ \; 2>/dev/null || true
+          ls -la staging/
+
+      - name: Upload bundles
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.platform }}
+          path: staging/
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── Publish ────────────────────────────────────────────────────────────────
+  # One job, after all three platforms are built, because a release row is only meaningful
+  # when every platform's artifact exists — publishing per-platform would briefly advertise
+  # an update that two thirds of users could not download.
+  publish:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      # Only for the tag's commit subject, which becomes the release notes shown in the
+      # "update available" prompt.
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: bundles
+          merge-multiple: true
+
+      - name: Upload installers to Supabase Storage
+        id: upload
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUCKET="desktop-releases"
+          BASE="${SUPABASE_URL%/}"
+
+          # Version-prefixed object names, so an old release stays downloadable forever and
+          # a rollback is a flag flip rather than a re-upload — same contract as app_releases.
+          upload() {
+            # Spaces out of the object name: productName is "Skyward Installer", so the
+            # bundles arrive with a space in them, and an unencoded space in the stored URL
+            # breaks both the updater's fetch and the download page's links. Dots match
+            # what GitHub does to release assets, so the names stay recognisable.
+            local file="$1" name="$VERSION/$(basename "$1" | tr ' ' '.')"
+            # Progress to stderr: stdout is the return channel for the URL, and a stray
+            # log line here would be captured into it by the caller's $( ).
+            echo "  → $name" >&2
+            curl -sS --fail-with-body -X POST \
+              "$BASE/storage/v1/object/$BUCKET/$name" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "x-upsert: true" \
+              --data-binary "@$file" > /dev/null
+            echo "$BASE/storage/v1/object/public/$BUCKET/$name"
+          }
+
+          # Resolve one artifact by glob, erroring if it is missing or ambiguous — a silent
+          # miss here would publish a release with a hole in it.
+          only() {
+            local matches
+            mapfile -t matches < <(find bundles -type f -name "$1" | sort)
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::Expected exactly one file matching '$1', found ${#matches[@]}"
+              printf '%s\n' "${matches[@]}"
+              exit 1
+            fi
+            printf '%s' "${matches[0]}"
+          }
+
+          echo "Uploading installers for $VERSION:"
+          APPIMAGE_URL=$(upload "$(only '*.AppImage')")
+          DEB_URL=$(upload "$(only '*.deb')")
+          EXE_URL=$(upload "$(only '*-setup.exe')")
+          DMG_URL=$(upload "$(only '*.dmg')")
+          MAC_TAR_URL=$(upload "$(only '*.app.tar.gz')")
+
+          # Signatures are small text files; they travel in the manifest, not the bucket.
+          APPIMAGE_SIG=$(cat "$(only '*.AppImage.sig')")
+          EXE_SIG=$(cat "$(only '*-setup.exe.sig')")
+          MAC_SIG=$(cat "$(only '*.app.tar.gz.sig')")
+
+          {
+            echo "version=$VERSION"
+            echo "platforms<<JSON"
+            jq -cn \
+              --arg appimage "$APPIMAGE_URL" --arg appimage_sig "$APPIMAGE_SIG" \
+              --arg exe "$EXE_URL"           --arg exe_sig "$EXE_SIG" \
+              --arg mac "$MAC_TAR_URL"       --arg mac_sig "$MAC_SIG" \
+              '{
+                 "linux-x86_64":   {url: $appimage, signature: $appimage_sig},
+                 "windows-x86_64": {url: $exe,      signature: $exe_sig},
+                 "darwin-x86_64":  {url: $mac,      signature: $mac_sig},
+                 "darwin-aarch64": {url: $mac,      signature: $mac_sig}
+               }'
+            echo "JSON"
+            echo "downloads<<JSON"
+            jq -cn \
+              --arg appimage "$APPIMAGE_URL" --arg deb "$DEB_URL" \
+              --arg exe "$EXE_URL"           --arg dmg "$DMG_URL" \
+              '{
+                 "linux-x86_64":   {url: $appimage, deb: $deb},
+                 "windows-x86_64": {url: $exe},
+                 "darwin-aarch64": {url: $dmg},
+                 "darwin-x86_64":  {url: $dmg}
+               }'
+            echo "JSON"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish release row
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERSION: ${{ steps.upload.outputs.version }}
+          PLATFORMS: ${{ steps.upload.outputs.platforms }}
+          DOWNLOADS: ${{ steps.upload.outputs.downloads }}
+        run: |
+          set -euo pipefail
+          BASE="${SUPABASE_URL%/}/rest/v1/desktop_releases"
+          AUTH=(-H "apikey: $SUPABASE_SERVICE_ROLE_KEY"
+                -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
+                -H "Content-Type: application/json")
+
+          jq -cn --arg v "$VERSION" \
+                 --argjson p "$PLATFORMS" \
+                 --argjson d "$DOWNLOADS" \
+                 --arg notes "$(git log -1 --pretty=%s 2>/dev/null || echo '')" \
+                 '{version: $v, platforms: $p, downloads: $d, notes: $notes}' > row.json
+
+          echo "Upserting $VERSION"
+          curl -sS --fail-with-body -X POST "$BASE" "${AUTH[@]}" \
+            -H "Prefer: resolution=merge-duplicates" \
+            --data-binary @row.json > /dev/null
+
+          # Clear then set, in that order: the partial unique index on is_current can
+          # collide mid-statement if a new current row is written before the old one is
+          # cleared. Two statements can never overlap.
+          echo "Flipping is_current to $VERSION"
+          curl -sS --fail-with-body -X PATCH "$BASE?is_current=eq.true" "${AUTH[@]}" \
+            -d '{"is_current": false}' > /dev/null
+          curl -sS --fail-with-body -X PATCH "$BASE?version=eq.$VERSION" "${AUTH[@]}" \
+            -d '{"is_current": true}' > /dev/null
+
+          echo "Published $VERSION"

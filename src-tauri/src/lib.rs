@@ -18,6 +18,10 @@ use commands::schedule::push_schedule;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Needed only so the frontend can relaunch into the freshly installed build once
+        // an update finishes; nothing else in the app restarts the process.
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             detect_devices,
             get_device_info,

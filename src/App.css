@@ -1018,3 +1018,29 @@ body {
 .link-button:hover {
   opacity: 0.8;
 }
+
+/* ── Update banner ────────────────────────────────────────────────────────── */
+/* Full-bleed across the top of both the login screen and the signed-in shell, so it
+   reads as belonging to the window rather than to whatever page is under it. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-radius: 0;
+  margin: 0;
+}
+
+.update-banner-text {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.update-banner-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  opacity: 0.8;
+}

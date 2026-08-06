@@ -1,6 +1,6 @@
 [package]
 name = "skywarddesktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Desktop companion for installing and configuring SkywardBlocker on Android devices"
 authors = ["you"]
 edition = "2021"
@@ -28,3 +28,5 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 # it ever reaches `adb install`.
 futures-util = "0.3"
 sha2 = "0.10"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"

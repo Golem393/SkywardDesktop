@@ -4,6 +4,7 @@ import "./App.css";
 import LoginStep from "./steps/LoginStep";
 import HomePage from "./pages/HomePage";
 import DevicesPage from "./pages/DevicesPage";
+import UpdateBanner from "./components/UpdateBanner";
 import { errorMessage, fetchMe, Me, SessionExpiredError, setAccessToken } from "./lib/api";
 
 declare global {
@@ -117,11 +118,19 @@ function App() {
   };
 
   if (!signedIn) {
-    return <LoginStep onLogin={handleLogin} message={sessionMessage} />;
+    // The banner sits outside the shell too: the update check finishes long before anyone
+    // signs in, and the login screen is the calmest moment to interrupt for a restart.
+    return (
+      <>
+        <UpdateBanner />
+        <LoginStep onLogin={handleLogin} message={sessionMessage} />
+      </>
+    );
   }
 
   return (
     <div className="app-shell">
+      <UpdateBanner />
       <nav className="navbar">
         <div className="navbar-brand">
           <svg className="navbar-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
