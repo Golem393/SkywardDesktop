@@ -13,6 +13,41 @@ pub struct VerificationResult {
     pub message: String,
 }
 
+/// Global settings that pre-answer Play Protect's package verifier, and the values that
+/// silence it: skip verification for ADB-installed packages, and record the upload
+/// consent question as already declined.
+const PLAY_PROTECT_SETTINGS: [(&str, &str); 2] = [
+    ("verifier_verify_adb_installs", "0"),
+    ("package_verifier_user_consent", "-1"),
+];
+
+/// Pre-answer Play Protect so it can't interrupt provisioning with its upload prompt.
+///
+/// The verifier asks for consent to upload any APK whose (package, signing certificate,
+/// hash) triple Google has never seen — which is every build we sideload, and a fresh
+/// one every time we rebuild. Most installs happen on a device with no accounts, where
+/// GMS never gets around to asking; but when accounts are present or were just re-added
+/// it fires as a full-screen "Send app for a security check?" dialog on top of setup.
+/// A parent who taps "Don't send" can leave the install visibly stalled.
+///
+/// `adb shell` holds WRITE_SECURE_SETTINGS, so we can set both keys ourselves. They are
+/// global settings that survive reboots, so writing them once per install keeps holding.
+///
+/// Best-effort on purpose. Some OEM builds refuse these keys or let a GMS update reset
+/// them, and a device that still shows the prompt is a far better outcome than one we
+/// refuse to install on — so failures are logged and the install proceeds.
+fn suppress_play_protect_prompt(app: &tauri::AppHandle, device_id: &str) {
+    for (key, value) in PLAY_PROTECT_SETTINGS {
+        if let Err(e) = adb::run_adb_for_device(
+            Some(app),
+            device_id,
+            &["shell", "settings", "put", "global", key, value],
+        ) {
+            eprintln!("[Play Protect] Could not set {} = {}: {}", key, value, e);
+        }
+    }
+}
+
 /// Tauri command: Install an APK onto the target device.
 /// Uses `-t` flag to allow testOnly APKs (common during development).
 #[tauri::command]
@@ -21,6 +56,10 @@ pub async fn install_apk(
     device_id: String,
     apk_path: String,
 ) -> Result<String, String> {
+    // Must happen before the push: the verifier runs as part of the install itself, so
+    // setting these afterwards would be one install too late.
+    suppress_play_protect_prompt(&app, &device_id);
+
     let output = adb::run_adb_for_device(
         Some(&app),
         &device_id,
