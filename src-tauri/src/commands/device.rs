@@ -7,7 +7,7 @@ use std::process::Command;
 pub struct PrerequisiteResult {
     /// True if the device is authorized (USB debugging accepted).
     pub usb_authorized: bool,
-    /// True if SkywardBlocker is not already installed on the phone.
+    /// True if Skyward is not already installed on the phone.
     pub no_existing_install: bool,
     /// True if no other app is already set as device owner.
     pub no_existing_owner: bool,
@@ -223,7 +223,7 @@ pub async fn is_device_connected(
         None => Ok(DeviceConnectionStatus {
             connected: false,
             status: "disconnected".to_string(),
-            message: "The device is no longer connected. Reconnect it via USB and search for devices again.".to_string(),
+            message: "Connect your device via USB and enable USB debugging to continue. Make sure file transferring is allowed.".to_string(),
         }),
     }
 }
@@ -299,7 +299,7 @@ pub async fn check_prerequisites(
         messages.push("❌ USB debugging not authorized — accept the prompt on the phone".to_string());
     }
 
-    // 2. Check if SkywardBlocker is already installed on the phone
+    // 2. Check if Skyward is already installed on the phone
     let no_existing_install = if usb_authorized {
         let output = adb::run_adb_for_device(
             Some(&app),
@@ -310,10 +310,10 @@ pub async fn check_prerequisites(
 
         let is_installed = output.contains("com.example.skywardblocker");
         if !is_installed {
-            messages.push("✅ SkywardBlocker is not currently installed on device".to_string());
+            messages.push("✅ Skyward is not currently installed on device".to_string());
             true
         } else {
-            messages.push("❌ SkywardBlocker is already installed on this phone — remove or factory reset before new setup".to_string());
+            messages.push("❌ Skyward is already installed on this phone — uninstall it before the new setup".to_string());
             false
         }
     } else {
@@ -337,11 +337,11 @@ pub async fn check_prerequisites(
             messages.push("✅ No existing Device Owner active".to_string());
             true
         } else {
-            messages.push("❌ A Device Owner is already active on this device — factory reset required".to_string());
+            messages.push("❌ A Device Owner is already active — contact the company who configured this device".to_string());
             false
         }
     } else {
-        messages.push("⏳ Cannot check device owner (device not authorized)".to_string());
+        messages.push("⏳ Cannot check device owner status (device not authorized)".to_string());
         false
     };
 
@@ -362,7 +362,7 @@ pub async fn check_prerequisites(
             (true, Vec::new())
         } else {
             messages.push(format!(
-                "❌ {} account(s) signed in — sign out of these, then sign straight back in once setup finishes",
+                "❌ {} account(s) signed in — you may need to sign out of these accounts",
                 raw_accounts.len()
             ));
             let mut label_cache = HashMap::new();

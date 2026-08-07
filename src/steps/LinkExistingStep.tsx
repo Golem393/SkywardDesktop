@@ -63,8 +63,8 @@ export default function LinkExistingStep({
         </div>
         <div className="card-content">
           <p className="card-description" style={{ marginTop: 0, marginBottom: 20 }}>
-            <strong>{deviceModel}</strong> ({deviceId}) already has SkywardBlocker installed and
-            active as Device Owner — it just isn't linked to your account yet. That usually
+            <strong>{deviceModel}</strong> ({deviceId}) already has Skyward installed and
+            active as an admin — it just isn't linked to your account yet. That usually
             means the last setup finished on the phone but couldn't reach our servers at the
             final step.
           </p>
@@ -72,7 +72,7 @@ export default function LinkExistingStep({
           <div className="alert alert-info" style={{ marginBottom: 16 }}>
             <p style={{ margin: 0, lineHeight: 1.6 }}>
               Linking only attaches this phone to your account. <strong>Nothing on the phone
-              changes</strong> — no reinstall, no reset, and the protection currently running
+                changes</strong> — no reinstall, no reset, and the protection currently running
               stays exactly as it is.
             </p>
           </div>

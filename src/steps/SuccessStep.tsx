@@ -55,7 +55,7 @@ export default function SuccessStep({ deviceModel, email, onDone }: SuccessStepP
               }}
             >
               <span className="status-dot connected" />
-              <span>Device Owner active</span>
+              <span>Admin status active</span>
             </div>
             <div
               style={{
@@ -105,7 +105,7 @@ export default function SuccessStep({ deviceModel, email, onDone }: SuccessStepP
 
       <div style={{ display: "flex", justifyContent: "center" }}>
         <button className="btn btn-primary" onClick={onDone}>
-          Back to Dashboard
+          Back
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
           </svg>

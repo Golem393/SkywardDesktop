@@ -58,7 +58,7 @@ const ERROR_MAP: Record<string, PhaseError> = {
   },
   download: {
     title: "Download Failed",
-    message: "SkywardBlocker could not be downloaded.",
+    message: "Skyward could not be downloaded.",
     suggestion:
       "Check your internet connection and press Retry. Nothing has been changed on the phone yet.",
   },
@@ -67,22 +67,20 @@ const ERROR_MAP: Record<string, PhaseError> = {
     message: "The app could not be installed on the device.",
     suggestion:
       "Make sure the phone has enough free storage and stays connected, then press Retry. " +
-      "If the phone already has a version of SkywardBlocker installed that was signed " +
+      "If the phone already has a version of Skyward installed that was signed " +
       "differently, it must be uninstalled first.",
   },
   device_owner: {
     title: "Activation Failed",
-    message: "Could not set SkywardBlocker as Device Owner.",
+    message: "Could not set Skyward as an admin.",
     suggestion:
-      "If you just signed out of accounts, give the phone another minute and hit Retry — " +
-      "Android can keep reporting them for a while after they're gone. Otherwise check that " +
-      "every account is signed out and no other Device Owner is active. If it keeps failing, " +
-      "a factory reset clears both conditions.",
+      "If you just signed out of accounts, give the phone another minute and click Re-check — " +
+      "If it keeps failing, reach out to our support email.",
   },
   verification: {
     title: "Verification Failed",
     message: "Installation completed but could not be verified.",
-    suggestion: "Open SkywardBlocker on the device manually to confirm it is running correctly.",
+    suggestion: "Open Skyward on the device manually to confirm it is running correctly.",
   },
 };
 
@@ -236,8 +234,8 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       }
       setEnrolmentWarning(
         `The phone is protected, but we couldn't save it to your account ` +
-          `(${errorMessage(err)}). Nothing is lost — go to Devices → Add Device → ` +
-          `"Link existing device" to attach this phone to your account without reinstalling.`
+        `(${errorMessage(err)}). Nothing is lost — go to Devices → Add Device → ` +
+        `"Link existing device" to attach this phone to your account without reinstalling.`
       );
     }
   }
@@ -329,7 +327,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     // would leave a half-set-up phone if the network dropped.
     setPhase("downloading");
     setDownloadProgress(null);
-    setStatusText("Downloading SkywardBlocker…");
+    setStatusText("Downloading Skyward…");
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     let apkPath: string;
@@ -354,7 +352,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     }
 
     setPhase("installing");
-    setStatusText("Installing SkywardBlocker on your device…");
+    setStatusText("Installing Skyward on your device…");
     try {
       await invoke<string>("install_apk", { deviceId, apkPath });
     } catch (err) {
@@ -374,8 +372,8 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     setPhase("activating");
     setStatusText(
       accountsToRestore.length > 0
-        ? "Activating Device Owner permissions… the phone can take up to a minute to let go of the accounts you just signed out of."
-        : "Activating Device Owner permissions…"
+        ? "Activating admin permissions… the phone can take up to a minute to let go of the accounts you just signed out of."
+        : "Activating admin permissions…"
     );
     try {
       await invoke<string>("set_device_owner", { deviceId });
@@ -391,7 +389,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     // time pushing config/schedule. USB debugging is intentionally left enabled by the
     // app at all times, so a real failure here means activation genuinely didn't work —
     // not an expected disconnect to work around.
-    setStatusText("Confirming Device Owner activation…");
+    setStatusText("Confirming admin activation…");
     try {
       const check = await invoke<VerificationResult>("verify_installation", { deviceId });
       if (!check.is_installed || !check.is_device_owner) {
@@ -411,7 +409,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
     // Phase 4: Push Configuration & Schedule
     setPhase("configuring");
-    setStatusText("Configuring and launching SkywardBlocker…");
+    setStatusText("Configuring and launching Skyward…");
     try {
       await invoke<string>("push_config", { deviceId });
     } catch {
@@ -442,7 +440,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         // card below rather than silently swallowed.
         setScheduleWarning(
           `The schedule could not be applied (${errorMessage(err)}). ` +
-            `Use "Push Schedule" on the Home page afterwards.`
+          `Use "Push Schedule" on the Home page afterwards.`
         );
       }
 
@@ -455,8 +453,8 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
           } else {
             setScheduleWarning(
               `The schedule is on the phone and is being enforced, but we couldn't record ` +
-                `that (${errorMessage(err)}). It will show as "Not pushed yet" on the Home ` +
-                `page — cosmetic only, nothing needs re-pushing.`
+              `that (${errorMessage(err)}). It will show as "Not pushed yet" on the Home ` +
+              `page — cosmetic only, nothing needs re-pushing.`
             );
           }
         }
@@ -505,9 +503,9 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
   const phaseSteps = [
     { key: "prerequisites", label: "Check prerequisites" },
-    { key: "downloading", label: "Download SkywardBlocker" },
+    { key: "downloading", label: "Download Skyward" },
     { key: "installing", label: "Install on device" },
-    { key: "activating", label: "Activate Device Owner" },
+    { key: "activating", label: "Activate admin status" },
     { key: "configuring", label: "Configure & launch app" },
     { key: "done", label: "Complete" },
   ];
@@ -523,7 +521,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
               {phase === "done" ? "✓" : "2"}
             </div>
             <div>
-              <div className="step-title">Install SkywardBlocker</div>
+              <div className="step-title">Install Skyward</div>
             </div>
           </div>
         </div>
@@ -641,10 +639,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                 Sign out of {pendingAccounts.length} account{pendingAccounts.length === 1 ? "" : "s"} on the phone
               </h4>
               <p style={{ fontSize: 13, color: "var(--foreground)", margin: "0 0 12px", lineHeight: 1.5 }}>
-                Android won't hand over device administration while an account is signed in.{" "}
-                <strong>You can sign straight back in as soon as setup finishes</strong> — nothing
-                is deleted, and we'll show you this list again at the end so you know exactly
-                what to restore.
+                Click the Manage Accounts button and remove the accounts. Click "Re-check" at the bottom of the page after removing the accounts.
               </p>
               <ul style={{
                 margin: "0 0 14px",
@@ -657,23 +652,17 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                   <li key={account}>{account}</li>
                 ))}
               </ul>
-              <button className="btn btn-outline" onClick={openAccountSettings} disabled={openingSettings}>
-                {openingSettings ? "Opening…" : "Open Accounts on the phone"}
+              <button className="btn btn-primary" onClick={openAccountSettings} disabled={openingSettings}>
+                {openingSettings ? (
+                  "Opening…"
+                ) : (
+                  <>
+                    Manage Accounts
+                  </>
+                )}
               </button>
               <p style={{ fontSize: 12, color: "var(--muted-foreground)", margin: "12px 0 0", lineHeight: 1.5 }}>
-                Only the accounts listed above matter. You don't need to log out of Instagram,
-                TikTok or similar apps — being signed into an app isn't the same thing.
-              </p>
-            </div>
-          )}
-
-          {/* No schedule yet — creating one now saves a separate push later. */}
-          {phase === "prerequisites" && !schedule && (
-            <div className="alert alert-warning" style={{ marginBottom: 16 }}>
-              <p style={{ margin: 0, lineHeight: 1.6 }}>
-                ⚠️ You haven't created a schedule yet. You can still set this device up, but the
-                schedule will have to be pushed later from the Home page. Creating it first
-                avoids that extra step.
+                Some of the accounts do not appear in the Manage accounts page of the Settings app. For these accounts, you will need to open the app and log out.
               </p>
             </div>
           )}
@@ -697,7 +686,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                 }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14, color: "var(--foreground)" }}>
-                      SkywardBlocker {release.version_name}
+                      Skyward {release.version_name}
                     </div>
                     {release.release_notes && (
                       <div style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 4, lineHeight: 1.5 }}>
@@ -843,7 +832,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                 lineHeight: 1.5,
                 paddingLeft: 38,
               }}>
-                SkywardBlocker{release ? ` ${release.version_name}` : ""} has been installed and
+                Skyward{release ? ` ${release.version_name}` : ""} has been installed and
                 activated on your device. You can now proceed to the next step.
               </p>
             </div>
@@ -879,8 +868,14 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                   <li key={account}>{account}</li>
                 ))}
               </ul>
-              <button className="btn btn-outline" onClick={openAccountSettings} disabled={openingSettings}>
-                {openingSettings ? "Opening…" : "Open Accounts on the phone"}
+              <button className="btn btn-primary" onClick={openAccountSettings} disabled={openingSettings}>
+                {openingSettings ? (
+                  "Opening…"
+                ) : (
+                  <>
+                    Manage Accounts
+                  </>
+                )}
               </button>
             </div>
           )}
@@ -907,7 +902,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <button className="btn btn-ghost" onClick={onCancel} disabled={isInstalling}>
-          Back to Dashboard
+          Back
         </button>
         <div className="flex gap-2">
           {(phase === "prerequisites" || isInstalling) && (

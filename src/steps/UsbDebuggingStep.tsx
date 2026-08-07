@@ -12,17 +12,12 @@ const INSTRUCTIONS: { title: string; detail: string }[] = [
   {
     title: "Unlock Developer options",
     detail:
-      "Settings → About phone, then tap Build number seven times. You'll be asked for the phone's PIN, then see \"You are now a developer\".",
+      "Open the Settings app and go to About phone → Software information → Build number. Tap Build number 7 times.",
   },
   {
     title: "Turn on USB debugging",
     detail:
-      "Settings → System → Developer options, and switch on USB debugging.",
-  },
-  {
-    title: "Connect the phone by USB",
-    detail:
-      "Plug the phone into this computer. A prompt will appear on the phone asking you to allow USB debugging — tap Allow.",
+      "Go to Settings → Developer options → USB deubgging. Tap the toggle to turn on USB debugging",
   },
 ];
 
@@ -40,7 +35,7 @@ export default function UsbDebuggingStep({ onContinue, onCancel }: UsbDebuggingS
         </div>
         <div className="card-content">
           <p className="card-description" style={{ marginTop: 0, marginBottom: 20 }}>
-            Do these three things on the phone you want to protect, in order.
+            Follow the steps below to prepare for the setup.
           </p>
 
           <ol className="instruction-list">
@@ -57,8 +52,7 @@ export default function UsbDebuggingStep({ onContinue, onCancel }: UsbDebuggingS
 
           <div className="alert alert-info" style={{ marginTop: 20 }}>
             <p style={{ margin: 0, lineHeight: 1.6 }}>
-              Setup wipes nothing, but it does take over device administration. Back up anything
-              you care about first.
+              If you are using a Samsung device, you may need to turn off the Auto Blocker. To disable it, go to Settings → Security and privacy → Auto Blocker and tap the toggle.
             </p>
           </div>
         </div>
@@ -69,7 +63,7 @@ export default function UsbDebuggingStep({ onContinue, onCancel }: UsbDebuggingS
           Cancel
         </button>
         <button className="btn btn-primary" onClick={onContinue}>
-          I've done all three
+          I enabled USB debugging
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
           </svg>

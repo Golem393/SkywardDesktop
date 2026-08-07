@@ -58,7 +58,7 @@ const PAGE_COPY: Record<Route, { title: string; subtitle: string }> = {
   },
   devices: {
     title: "Devices",
-    subtitle: "Set up and manage the phone Skyward protects.",
+    subtitle: "Set up and manage the phones that use Skyward.",
   },
 };
 
