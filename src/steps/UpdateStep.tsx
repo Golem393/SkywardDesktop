@@ -302,7 +302,7 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
                 ⚠️ We couldn't read which version is on the phone
                 {installed?.is_installed === false ? " (Skyward may not be installed)" : ""}.
                 Installing Skyward {release.version_name} is safe either way — it won't
-                affect Device Owner or your schedule.
+                affect your schedule.
               </p>
             </div>
           )}

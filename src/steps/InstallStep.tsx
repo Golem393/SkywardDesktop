@@ -72,7 +72,7 @@ const ERROR_MAP: Record<string, PhaseError> = {
   },
   device_owner: {
     title: "Activation Failed",
-    message: "Could not set Skyward as Device Owner.",
+    message: "Could not set Skyward as an admin.",
     suggestion:
       "If you just signed out of accounts, give the phone another minute and click Re-check — " +
       "If it keeps failing, reach out to our support email.",
@@ -372,8 +372,8 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     setPhase("activating");
     setStatusText(
       accountsToRestore.length > 0
-        ? "Activating Device Owner permissions… the phone can take up to a minute to let go of the accounts you just signed out of."
-        : "Activating Device Owner permissions…"
+        ? "Activating admin permissions… the phone can take up to a minute to let go of the accounts you just signed out of."
+        : "Activating admin permissions…"
     );
     try {
       await invoke<string>("set_device_owner", { deviceId });
@@ -389,7 +389,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     // time pushing config/schedule. USB debugging is intentionally left enabled by the
     // app at all times, so a real failure here means activation genuinely didn't work —
     // not an expected disconnect to work around.
-    setStatusText("Confirming Device Owner activation…");
+    setStatusText("Confirming admin activation…");
     try {
       const check = await invoke<VerificationResult>("verify_installation", { deviceId });
       if (!check.is_installed || !check.is_device_owner) {
@@ -505,7 +505,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
     { key: "prerequisites", label: "Check prerequisites" },
     { key: "downloading", label: "Download Skyward" },
     { key: "installing", label: "Install on device" },
-    { key: "activating", label: "Activate Device Owner" },
+    { key: "activating", label: "Activate admin status" },
     { key: "configuring", label: "Configure & launch app" },
     { key: "done", label: "Complete" },
   ];

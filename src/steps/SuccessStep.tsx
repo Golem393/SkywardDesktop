@@ -55,7 +55,7 @@ export default function SuccessStep({ deviceModel, email, onDone }: SuccessStepP
               }}
             >
               <span className="status-dot connected" />
-              <span>Device Owner active</span>
+              <span>Admin status active</span>
             </div>
             <div
               style={{

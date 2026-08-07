@@ -118,7 +118,7 @@ pub async fn set_device_owner(app: tauri::AppHandle, device_id: String) -> Resul
         ) {
             // DPM prints "Success: Device owner set to package ..." on stdout.
             Ok(output) if output.to_lowercase().contains("success") => {
-                return Ok("Device Owner set successfully.".to_string());
+                return Ok("Admin set successfully.".to_string());
             }
             // Exit 0 without the success marker shouldn't happen, but treat it as a
             // failure rather than silently reporting a Device Owner that isn't set.
@@ -138,7 +138,7 @@ pub async fn set_device_owner(app: tauri::AppHandle, device_id: String) -> Resul
         std::thread::sleep(std::time::Duration::from_millis(OWNER_RETRY_DELAY_MS));
     }
 
-    Err(format!("Failed to set Device Owner: {}", last_failure))
+    Err(format!("Failed to set admin: {}", last_failure))
 }
 
 /// Tauri command: Send broadcast to clear Device Owner status (relinquish control for testing/uninstallation).
@@ -217,7 +217,7 @@ pub async fn verify_installation(
             is_installed: false,
             is_device_owner: false,
             success: false,
-            message: "SkywardBlocker is not installed on the device.".to_string(),
+            message: "Skyward is not installed on the device.".to_string(),
         });
     }
 
@@ -230,13 +230,13 @@ pub async fn verify_installation(
     .unwrap_or_default();
 
     let is_device_owner = dpm_output.contains(DEVICE_ADMIN_COMPONENT)
-        || (dpm_output.contains("Device Owner:") && dpm_output.contains(PACKAGE_NAME));
+        || (dpm_output.contains("Admin:") && dpm_output.contains(PACKAGE_NAME));
 
     let success = is_installed && is_device_owner;
     let message = if success {
-        "Skyward is installed and actively running as Device Owner.".to_string()
+        "Skyward is installed and actively running as an admin.".to_string()
     } else {
-        "Skyward is installed, but is NOT configured as Device Owner.".to_string()
+        "Skyward is installed, but is NOT configured as an admin.".to_string()
     };
 
     Ok(VerificationResult {

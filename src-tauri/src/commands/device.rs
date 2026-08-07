@@ -330,18 +330,18 @@ pub async fn check_prerequisites(
         )
         .unwrap_or_default();
 
-        let has_owner = output.contains("Device Owner:")
-            && !output.contains("Device Owner: null");
+        let has_owner = output.contains("Admin:")
+            && !output.contains("Admin: null");
 
         if !has_owner {
-            messages.push("✅ No existing Device Owner active".to_string());
+            messages.push("✅ No existing admin active".to_string());
             true
         } else {
-            messages.push("❌ A Device Owner is already active — contact the company who configured this device".to_string());
+            messages.push("❌ An admin is already active — contact the company who configured this device".to_string());
             false
         }
     } else {
-        messages.push("⏳ Cannot check device owner (device not authorized)".to_string());
+        messages.push("⏳ Cannot check admin status (device not authorized)".to_string());
         false
     };
 
