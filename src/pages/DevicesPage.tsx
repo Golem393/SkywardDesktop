@@ -135,7 +135,6 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
         {view === "enrolled" && (
           <SuccessStep
             deviceModel={pendingModel}
-            email={me?.email ?? ""}
             onDone={backToList}
           />
         )}

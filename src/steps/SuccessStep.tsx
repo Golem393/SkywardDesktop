@@ -1,10 +1,9 @@
 interface SuccessStepProps {
   deviceModel: string;
-  email: string;
   onDone: () => void;
 }
 
-export default function SuccessStep({ deviceModel, email, onDone }: SuccessStepProps) {
+export default function SuccessStep({ deviceModel, onDone }: SuccessStepProps) {
   return (
     <div className="space-y-4">
       <div className="card">
