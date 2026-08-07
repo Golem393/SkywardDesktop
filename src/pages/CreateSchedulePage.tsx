@@ -18,7 +18,7 @@ import {
   toggleDay,
 } from "../lib/schedule";
 
-const SUPPORT_EMAIL = "support@skywardos.com";
+const SUPPORT_EMAIL = "hello@skywardos.com";
 
 type Duration = "week" | "custom";
 

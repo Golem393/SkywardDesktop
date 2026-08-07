@@ -9,7 +9,7 @@ import DeviceDisconnectedModal, {
   DeviceConnectionStatus,
 } from "../components/DeviceDisconnectedModal";
 
-const SUPPORT_EMAIL = "support@skywardos.com";
+const SUPPORT_EMAIL = "hello@skywardos.com";
 
 interface HomePageProps {
   me: Me | null;
