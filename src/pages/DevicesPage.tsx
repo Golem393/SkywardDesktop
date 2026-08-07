@@ -10,7 +10,7 @@ import UpdateStep from "../steps/UpdateStep";
 import RemoveStep from "../steps/RemoveStep";
 import { Me } from "../lib/api";
 
-const SUPPORT_EMAIL = "support@skywardos.com";
+const SUPPORT_EMAIL = "hello@skywardos.com";
 
 /** Sub-views within Devices. The list is the resting state; everything else returns to it. */
 type View = "list" | "instructions" | "scan" | "setup" | "link" | "enrolled" | "update" | "remove";
@@ -198,7 +198,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
           <div className="step-header">
             <div className="step-number active">📱</div>
             <div>
-              <div className="step-title">Connected devices</div>
+              <div className="step-title">My devices</div>
             </div>
           </div>
         </div>
@@ -216,7 +216,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
                   <div className="device-name">{device.model || "Android device"}</div>
                   <div className="device-serial">{device.serial}</div>
                 </div>
-                <span className="badge badge-success">Protected</span>
+                <span className="badge badge-success">Installed</span>
               </div>
 
               <p className="text-xs text-muted" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -231,8 +231,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
                 No device yet
               </div>
               <p className="text-sm text-muted" style={{ maxWidth: 400, margin: "0 auto 20px", lineHeight: 1.6 }}>
-                Add the phone you want Skyward to protect. We'll walk you through enabling USB
-                debugging, then set it up automatically.
+                Get your phone ready and we will guide you through the setup.
               </p>
               <button className="btn btn-primary" onClick={() => setView("instructions")}>
                 Add Device
@@ -263,7 +262,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
               <div>
                 <div className="action-title">Update the app</div>
                 <p className="action-detail">
-                  Push a newer SkywardBlocker build over USB while protection stays on.
+                  Install the newest version of Skyward
                 </p>
               </div>
               <button className="btn btn-outline" onClick={() => setView("update")}>
@@ -276,7 +275,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
                 <div className="action-title">Remove the app</div>
                 <p className="action-detail">
                   {removeEnabled
-                    ? "Release device administration and uninstall SkywardBlocker."
+                    ? "Uninstall Skyward"
                     : `Removal is switched off for your account. That's intentional — it's what makes the block hold. Email ${SUPPORT_EMAIL} if you need it enabled.`}
                 </p>
               </div>

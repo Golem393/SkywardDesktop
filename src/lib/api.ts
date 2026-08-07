@@ -32,7 +32,7 @@ export interface EnrolledDevice {
 }
 
 /**
- * The SkywardBlocker build the desktop app should install.
+ * The Skyward build the desktop app should install.
  *
  * `download_url` is a short-lived signed URL (~10 minutes) over a private bucket, so it is
  * fetched immediately before a download rather than held onto — a release fetched when a
@@ -84,7 +84,7 @@ export function hasAccessToken(): boolean {
  * long-lived session ends. Callers that catch it should sign the user out rather than just
  * showing an inline error, since retrying with the same token will never succeed.
  */
-export class SessionExpiredError extends Error {}
+export class SessionExpiredError extends Error { }
 
 /** Any other non-2xx response. Carries the status so callers can act on specific ones —
  *  notably 409, which `POST /schedule` and `POST /devices` return for "already exists". */

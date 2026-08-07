@@ -25,15 +25,14 @@ export async function checkDeviceConnected(deviceId: string): Promise<DeviceConn
 
 interface DeviceDisconnectedModalProps {
   status: DeviceConnectionStatus;
-  /** Return to the device search screen so the user can reconnect and retry. */
-  onBackToDevices: () => void;
+  /** Optional return to device search */
+  onBackToDevices?: () => void;
   /** Dismiss the dialog and stay on the current screen. */
   onClose: () => void;
 }
 
 export default function DeviceDisconnectedModal({
   status,
-  onBackToDevices,
   onClose,
 }: DeviceDisconnectedModalProps) {
   return (
@@ -59,16 +58,9 @@ export default function DeviceDisconnectedModal({
           <p style={{ fontSize: 14, color: "var(--foreground)", marginTop: 0, lineHeight: 1.5 }}>
             {status.message}
           </p>
-          <p style={{ fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
-            Reconnect the phone via USB (and make sure USB debugging is enabled and authorized),
-            then search for devices again.
-          </p>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
             <button className="btn btn-outline" onClick={onClose}>
               Close
-            </button>
-            <button className="btn btn-primary" onClick={onBackToDevices}>
-              Back to Device Search
             </button>
           </div>
         </div>
