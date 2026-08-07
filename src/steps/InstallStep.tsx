@@ -257,6 +257,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         no_existing_install: boolean;
         no_existing_owner: boolean;
         no_accounts: boolean;
+        file_transfer_enabled: boolean;
         accounts: string[];
         messages: string[];
         can_proceed: boolean;

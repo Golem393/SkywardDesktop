@@ -22,7 +22,7 @@ const INSTRUCTIONS: { title: string; detail: string }[] = [
   {
     title: "Connect the phone by USB",
     detail:
-      "Plug the phone into this computer. A prompt will appear on the phone asking you to allow USB debugging — tap Allow.",
+      "Plug the phone into this computer. A prompt will appear on the phone asking you to allow USB debugging — tap Allow. Then tap the USB notification and set the mode to File transfer.",
   },
 ];
 

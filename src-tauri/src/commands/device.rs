@@ -12,6 +12,8 @@ pub struct PrerequisiteResult {
     pub no_existing_owner: bool,
     /// True if no Google accounts are present on the device (required for set-device-owner).
     pub no_accounts: bool,
+    /// True if the phone's USB mode is File transfer (MTP) rather than charging only.
+    pub file_transfer_enabled: bool,
     /// Unique accounts found on the device, formatted with a friendly app
     /// label where one could be resolved (e.g. "Instagram (user@example.com)"),
     /// falling back to "name (type)" otherwise.
@@ -274,6 +276,7 @@ pub async fn open_account_settings(
 /// 2. SkywardBlocker is not already installed on the device
 /// 3. No existing device owner is active on the device
 /// 4. No accounts on device (required for `dpm set-device-owner`)
+/// 5. USB mode is File transfer, not charging only
 ///
 /// Note on (4): the blocking set is every `AccountManager` account, not just Google
 /// ones. Being logged into an app is not the same thing — verified on hardware, where
@@ -381,13 +384,43 @@ pub async fn check_prerequisites(
         (false, Vec::new())
     };
 
-    let can_proceed = usb_authorized && no_existing_install && no_existing_owner && no_accounts;
+    // 5. Check the phone's USB mode is File transfer
+    //
+    // `sys.usb.state` is the comma-separated list of active USB functions, e.g. "mtp,adb"
+    // for File transfer or just "adb" for charging only. Several OEM skins refuse app
+    // installs over USB unless File transfer is selected, and fail with an error that
+    // points nowhere near the real cause — so it's cheaper to catch it here.
+    //
+    // "mtp" is matched against adb output, not display copy: don't reword it.
+    let file_transfer_enabled = if usb_authorized {
+        let output = adb::run_adb_for_device(
+            Some(&app),
+            &device_id,
+            &["shell", "getprop", "sys.usb.state"],
+        )
+        .unwrap_or_default();
+
+        if output.split(',').any(|function| function.trim() == "mtp") {
+            messages.push("✅ USB mode set to File transfer".to_string());
+            true
+        } else {
+            messages.push("❌ USB mode is not File transfer — on the phone, tap the USB notification and choose File transfer".to_string());
+            false
+        }
+    } else {
+        messages.push("⏳ Cannot check USB mode (device not authorized)".to_string());
+        false
+    };
+
+    let can_proceed =
+        usb_authorized && no_existing_install && no_existing_owner && no_accounts && file_transfer_enabled;
 
     Ok(PrerequisiteResult {
         usb_authorized,
         no_existing_install,
         no_existing_owner,
         no_accounts,
+        file_transfer_enabled,
         accounts,
         messages,
         can_proceed,
