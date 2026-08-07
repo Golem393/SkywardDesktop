@@ -33,71 +33,10 @@ export default function SuccessStep({ deviceModel, email, onDone }: SuccessStepP
           </p>
         </div>
         <div className="card-content" style={{ textAlign: "center" }}>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-              maxWidth: 320,
-              margin: "0 auto",
-            }}
-          >
-            {/* Status items */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                borderRadius: "calc(var(--radius) - 2px)",
-                background: "var(--muted)",
-                fontSize: 14,
-              }}
-            >
-              <span className="status-dot connected" />
-              <span>Device Owner active</span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                borderRadius: "calc(var(--radius) - 2px)",
-                background: "var(--muted)",
-                fontSize: 14,
-              }}
-            >
-              <span className="status-dot connected" />
-              <span>Configuration pushed</span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                borderRadius: "calc(var(--radius) - 2px)",
-                background: "var(--muted)",
-                fontSize: 14,
-              }}
-            >
-              <span className="status-dot connected" />
-              <span>Blocking enabled</span>
-            </div>
-          </div>
 
           <div className="mt-6">
             <p className="text-sm text-muted" style={{ lineHeight: 1.6 }}>
-              You can safely disconnect the USB cable. The phone is now protected.
-              <br />
-              Manage your subscription at <span style={{ color: "var(--primary)", fontWeight: 500 }}>skywardos.com</span>
-            </p>
-          </div>
-
-          <div className="mt-4">
-            <p className="text-xs text-muted">
-              Logged in as <strong>{email}</strong>
+              You can safely disconnect the USB cable.
             </p>
           </div>
         </div>

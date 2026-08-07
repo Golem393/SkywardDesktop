@@ -22,11 +22,7 @@ interface VerificationResult {
   message: string;
 }
 
-const ADD_STEPS = [
-  { key: "instructions", label: "Prepare the phone", description: "Enable USB debugging" },
-  { key: "scan", label: "Scan for the device", description: "Find it over USB" },
-  { key: "setup", label: "Automatic setup", description: "Install and protect" },
-];
+
 
 interface DevicesPageProps {
   me: Me | null;
@@ -81,36 +77,11 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
     view === "link" ||
     view === "enrolled"
   ) {
-    const stepIndex = view === "instructions" ? 0 : view === "scan" ? 1 : 2;
+
 
     return (
       <div className="space-y-4">
-        {/* Linking isn't part of the install sequence — showing "Automatic setup" as the
-            active step there would misdescribe what's about to happen. */}
-        {view !== "enrolled" && view !== "link" && (
-          <div className="stepper card" style={{ padding: "20px 24px" }}>
-            {ADD_STEPS.map((step, i) => {
-              const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "pending";
-              return (
-                <div className="stepper-item" key={step.key}>
-                  <div className={`stepper-bullet ${state}`}>
-                    {state === "done" ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    ) : (
-                      i + 1
-                    )}
-                  </div>
-                  <div className="stepper-content">
-                    <div className={`stepper-label ${state === "pending" ? "muted" : ""}`}>{step.label}</div>
-                    <div className="stepper-sublabel">{step.description}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+
 
         {view === "instructions" && (
           <UsbDebuggingStep onContinue={() => setView("scan")} onCancel={backToList} />

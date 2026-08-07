@@ -520,10 +520,10 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         <div className="card-header">
           <div className="step-header">
             <div className={`step-number ${phase === "done" ? "done" : "active"}`}>
-              {phase === "done" ? "✓" : "2"}
+              {phase === "done" ? "✓" : "3"}
             </div>
             <div>
-              <div className="step-title">Install SkywardBlocker</div>
+              <div className="step-title">Install Skyward</div>
             </div>
           </div>
         </div>
@@ -849,41 +849,6 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
             </div>
           )}
 
-          {/* The other half of the promise made before sign-out: hand back the exact list,
-              so the parent never has to remember what was on the phone. */}
-          {phase === "done" && accountsToRestore.length > 0 && (
-            <div style={{
-              background: "oklch(0.71 0.08 247 / 0.06)",
-              border: "1px solid oklch(0.71 0.08 247 / 0.18)",
-              borderRadius: "var(--radius)",
-              padding: "16px 20px",
-              marginBottom: 16,
-              animation: "fadeInUp 0.35s ease-out both",
-            }}>
-              <h4 style={{ margin: "0 0 8px 0", fontSize: 14, color: "var(--foreground)" }}>
-                Sign back into {accountsToRestore.length} account{accountsToRestore.length === 1 ? "" : "s"}
-              </h4>
-              <p style={{ fontSize: 13, color: "var(--foreground)", margin: "0 0 12px", lineHeight: 1.5 }}>
-                The phone is protected now, so these can go straight back on. Add the Google
-                account first — it restores the phone's saved passwords, which then fill in
-                most of the rest for you.
-              </p>
-              <ul style={{
-                margin: "0 0 14px",
-                paddingLeft: 18,
-                fontSize: 13,
-                color: "var(--foreground)",
-                lineHeight: 1.7,
-              }}>
-                {accountsToRestore.map((account) => (
-                  <li key={account}>{account}</li>
-                ))}
-              </ul>
-              <button className="btn btn-outline" onClick={openAccountSettings} disabled={openingSettings}>
-                {openingSettings ? "Opening…" : "Open Accounts on the phone"}
-              </button>
-            </div>
-          )}
 
           {/* Installation still succeeded, but the schedule push or the account record
               didn't land — both need saying rather than silently swallowing. */}
