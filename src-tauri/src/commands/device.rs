@@ -223,7 +223,7 @@ pub async fn is_device_connected(
         None => Ok(DeviceConnectionStatus {
             connected: false,
             status: "disconnected".to_string(),
-            message: "The device is no longer connected. Reconnect it via USB and search for devices again.".to_string(),
+            message: "Connect your device via USB and enable USB debugging to continue. Make sure file transferring is allowed.".to_string(),
         }),
     }
 }
@@ -313,7 +313,7 @@ pub async fn check_prerequisites(
             messages.push("✅ Skyward is not currently installed on device".to_string());
             true
         } else {
-            messages.push("❌ Skyward is already installed on this phone — remove or factory reset before new setup".to_string());
+            messages.push("❌ Skyward is already installed on this phone — uninstall it before the new setup".to_string());
             false
         }
     } else {
@@ -337,7 +337,7 @@ pub async fn check_prerequisites(
             messages.push("✅ No existing Device Owner active".to_string());
             true
         } else {
-            messages.push("❌ A Device Owner is already active on this device — factory reset required".to_string());
+            messages.push("❌ A Device Owner is already active — contact the company who configured this device".to_string());
             false
         }
     } else {

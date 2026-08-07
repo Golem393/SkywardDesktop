@@ -291,7 +291,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
               <div>
                 <div className="action-title">Update the app</div>
                 <p className="action-detail">
-                  Push a newer Skyward build over USB while protection stays on.
+                  Install the newest version of Skyward
                 </p>
               </div>
               <button className="btn btn-outline" onClick={() => setView("update")}>
@@ -304,7 +304,7 @@ export default function DevicesPage({ me, loading, refresh, signOut }: DevicesPa
                 <div className="action-title">Remove the app</div>
                 <p className="action-detail">
                   {removeEnabled
-                    ? "Release device administration and uninstall Skyward."
+                    ? "Uninstall Skyward"
                     : `Removal is switched off for your account. That's intentional — it's what makes the block hold. Email ${SUPPORT_EMAIL} if you need it enabled.`}
                 </p>
               </div>

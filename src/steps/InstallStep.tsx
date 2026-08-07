@@ -902,7 +902,7 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <button className="btn btn-ghost" onClick={onCancel} disabled={isInstalling}>
-          Back to Dashboard
+          Back
         </button>
         <div className="flex gap-2">
           {(phase === "prerequisites" || isInstalling) && (

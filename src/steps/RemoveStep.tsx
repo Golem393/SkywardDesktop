@@ -15,6 +15,19 @@ interface RemoveStepProps {
   signOut: (reason?: string) => void;
 }
 
+const INSTRUCTIONS: { title: string; detail: string }[] = [
+  {
+    title: "Unlock Developer options",
+    detail:
+      "Open the Settings app and go to About phone → Software information → Build number. Tap Build number 7 times.",
+  },
+  {
+    title: "Turn on USB debugging",
+    detail:
+      "Go to Settings → Developer options → USB debugging. Tap the toggle to turn on USB debugging",
+  },
+];
+
 export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices, signOut }: RemoveStepProps) {
   const [isRemoving, setIsRemoving] = useState(false);
   const [statusText, setStatusText] = useState("");
@@ -69,7 +82,7 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
       return;
     }
 
-    setStatusText("Releasing Device Owner privileges and uninstalling app…");
+    setStatusText("Uninstalling app…");
     try {
       await invoke<string>("uninstall_app", { deviceId });
       setSuccess(true);
@@ -97,7 +110,7 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
         </div>
         <div className="card-content">
           <p className="card-description" style={{ marginTop: 0, marginBottom: 16 }}>
-            This will uninstall Skyward completely from the device <strong>{deviceModel}</strong>.
+            To uninstall Skyward completely from the device <strong>{deviceModel}</strong>, follow the steps below.
           </p>
 
           {statusText && (
@@ -119,18 +132,17 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
           )}
 
           {!success && !isRemoving && (
-            <div style={{
-              padding: "16px 20px",
-              background: "oklch(0.6 0.22 27 / 0.05)",
-              border: "1px solid oklch(0.6 0.22 27 / 0.18)",
-              borderRadius: "var(--radius)",
-              marginBottom: 16,
-            }}>
-              <h4 style={{ margin: "0 0 8px 0", color: "var(--destructive)", fontSize: 14 }}>Decommission Notice</h4>
-              <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0, lineHeight: 1.5 }}>
-                Clicking Remove will transmit an authorization intent to release Device Owner status before uninstalling. Make sure the phone is connected via USB first.
-              </p>
-            </div>
+            <ol className="instruction-list" style={{ marginTop: 16, marginBottom: 16 }}>
+              {INSTRUCTIONS.map((item, i) => (
+                <li key={item.title}>
+                  <span className="instruction-number">{i + 1}</span>
+                  <div>
+                    <div className="instruction-title">{item.title}</div>
+                    <p className="instruction-detail">{item.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
           )}
 
           {error && (
@@ -147,7 +159,7 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
               <p style={{ fontSize: 13, color: "var(--foreground)", margin: 0 }}>{error}</p>
               {recordDropped && (
                 <p style={{ fontSize: 13, color: "var(--muted-foreground)", margin: "8px 0 0", lineHeight: 1.5 }}>
-                  This phone has already been removed from your account, but SkywardBlocker is
+                  This phone has already been removed from your account, but Skyward is
                   still installed and still protecting it. Reconnect the phone and try again.
                   If you'd rather keep the protection, use{" "}
                   <strong>Add Device → "Link existing device"</strong> to put it back on your
@@ -166,7 +178,7 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
               marginBottom: 16,
             }}>
               <p style={{ margin: 0, color: "oklch(0.5 0.15 150)", fontWeight: 600 }}>
-                ✓ SkywardBlocker has been successfully decommissioned and uninstalled from your device.
+                ✓ Skyward has successfully been uninstalled from your device.
               </p>
             </div>
           )}
@@ -175,7 +187,7 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
 
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <button className="btn btn-ghost" onClick={onCancel} disabled={isRemoving}>
-          Back to Dashboard
+          Back
         </button>
         {!success ? (
           <button className="btn btn-outline" style={{ borderColor: "var(--destructive)", color: "var(--destructive)" }} onClick={() => setShowWarningModal(true)} disabled={isRemoving}>

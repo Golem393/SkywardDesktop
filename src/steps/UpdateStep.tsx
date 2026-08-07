@@ -31,6 +31,19 @@ interface UpdateStepProps {
  */
 type UpdateState = "checking" | "up-to-date" | "available" | "unknown" | "failed";
 
+const INSTRUCTIONS: { title: string; detail: string }[] = [
+  {
+    title: "Unlock Developer options",
+    detail:
+      "Open the Settings app and go to About phone → Software information → Build number. Tap Build number 7 times.",
+  },
+  {
+    title: "Turn on USB debugging",
+    detail:
+      "Go to Settings → Developer options → USB debugging. Tap the toggle to turn on USB debugging",
+  },
+];
+
 export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel, onBackToDevices, signOut }: UpdateStepProps) {
   const [release, setRelease] = useState<Release | null>(null);
   const [installed, setInstalled] = useState<InstalledVersion | null>(null);
@@ -156,14 +169,28 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
               {success ? "✓" : "⬆"}
             </div>
             <div>
-              <div className="step-title">Update SkywardBlocker</div>
+              <div className="step-title">Update Skyward</div>
             </div>
           </div>
         </div>
         <div className="card-content">
           <p className="card-description" style={{ marginTop: 0, marginBottom: 16 }}>
-            Updating application on <strong>{deviceModel}</strong> ({deviceId}). This in-place update preserves your existing Device Owner security policies and configuration.
+            To update Skyward on the device <strong>{deviceModel}</strong>, follow the steps below.
           </p>
+
+          {!success && !isUpdating && (
+            <ol className="instruction-list" style={{ marginTop: 16, marginBottom: 16 }}>
+              {INSTRUCTIONS.map((item, i) => (
+                <li key={item.title}>
+                  <span className="instruction-number">{i + 1}</span>
+                  <div>
+                    <div className="instruction-title">{item.title}</div>
+                    <p className="instruction-detail">{item.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
 
           {statusText && (
             <div className="install-status-banner" style={{
@@ -234,8 +261,8 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
             }}>
               <p style={{ margin: 0, color: "var(--success)", fontWeight: 600, fontSize: 14 }}>
                 {success
-                  ? `✓ Updated to SkywardBlocker ${release.version_name}`
-                  : `✓ SkywardBlocker ${installed?.version_name ?? release.version_name} is up to date`}
+                  ? `✓ Updated to Skyward ${release.version_name}`
+                  : `✓ Skyward ${installed?.version_name ?? release.version_name} is up to date`}
               </p>
               <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
                 This is the latest version. Nothing needs to be done.
@@ -273,8 +300,8 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
             <div className="alert alert-warning" style={{ marginBottom: 16 }}>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>
                 ⚠️ We couldn't read which version is on the phone
-                {installed?.is_installed === false ? " (SkywardBlocker may not be installed)" : ""}.
-                Installing SkywardBlocker {release.version_name} is safe either way — it won't
+                {installed?.is_installed === false ? " (Skyward may not be installed)" : ""}.
+                Installing Skyward {release.version_name} is safe either way — it won't
                 affect Device Owner or your schedule.
               </p>
             </div>
@@ -299,7 +326,7 @@ export default function UpdateStep({ deviceId, deviceModel, onComplete, onCancel
 
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <button className="btn btn-ghost" onClick={onCancel} disabled={isUpdating}>
-          Back to Dashboard
+          Back
         </button>
         {canUpdate && !success ? (
           <button className="btn btn-primary" onClick={handleStartUpdate} disabled={isUpdating}>

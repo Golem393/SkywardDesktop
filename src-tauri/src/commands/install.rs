@@ -178,7 +178,7 @@ pub async fn uninstall_app(app: tauri::AppHandle, device_id: String) -> Result<S
         .map_err(|e| e.to_string())?;
 
     if output.contains("Success") {
-        Ok("SkywardBlocker uninstalled successfully.".to_string())
+        Ok("Skyward uninstalled successfully.".to_string())
     } else {
         Err(format!("Uninstall failed: {}", output.trim()))
     }
@@ -234,9 +234,9 @@ pub async fn verify_installation(
 
     let success = is_installed && is_device_owner;
     let message = if success {
-        "SkywardBlocker is installed and actively running as Device Owner.".to_string()
+        "Skyward is installed and actively running as Device Owner.".to_string()
     } else {
-        "SkywardBlocker is installed, but is NOT configured as Device Owner.".to_string()
+        "Skyward is installed, but is NOT configured as Device Owner.".to_string()
     };
 
     Ok(VerificationResult {
