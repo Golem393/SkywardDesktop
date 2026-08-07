@@ -72,7 +72,7 @@ export default function LinkExistingStep({
           <div className="alert alert-info" style={{ marginBottom: 16 }}>
             <p style={{ margin: 0, lineHeight: 1.6 }}>
               Linking only attaches this phone to your account. <strong>Nothing on the phone
-              changes</strong> — no reinstall, no reset, and the protection currently running
+                changes</strong> — no reinstall, no reset, and the protection currently running
               stays exactly as it is.
             </p>
           </div>

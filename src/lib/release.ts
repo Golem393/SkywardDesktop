@@ -1,5 +1,5 @@
 /**
- * Getting the current SkywardBlocker APK onto this machine.
+ * Getting the current Skyward APK onto this machine.
  *
  * Shared by the install and update flows, which differ in what they do with the file but
  * not in how they obtain it.
@@ -9,7 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { fetchLatestRelease, Release } from "./api";
 
-/** What SkywardBlocker reports on a connected device. Mirrors the Rust `InstalledVersion`. */
+/** What Skyward reports on a connected device. Mirrors the Rust `InstalledVersion`. */
 export interface InstalledVersion {
   is_installed: boolean;
   version_code: number | null;
@@ -59,7 +59,7 @@ export async function downloadCurrentRelease(
   }
 }
 
-/** What SkywardBlocker version the device is running, if any. */
+/** What Skyward version the device is running, if any. */
 export function getInstalledVersion(deviceId: string): Promise<InstalledVersion> {
   return invoke<InstalledVersion>("get_installed_version", { deviceId });
 }

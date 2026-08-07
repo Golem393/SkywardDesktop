@@ -56,7 +56,7 @@ export default function ConnectStep({ onDeviceSelected, onBack }: ConnectStepPro
         </div>
         <div className="card-content">
           <p className="card-description" style={{ marginTop: 0 }}>
-            Connect your Android phone to this computer using a USB cable. Make sure USB Debugging is enabled in Developer Options.
+            Connect your Android phone to this computer using a USB cable. Make sure to allow USB debugging and that file transferring is allowed.
           </p>
 
           <div className="mt-4">
@@ -97,7 +97,7 @@ export default function ConnectStep({ onDeviceSelected, onBack }: ConnectStepPro
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`status-dot ${d.status === "device" ? "connected" : "pending"}`} />
-                    <span className="text-xs text-muted">{d.status}</span>
+                    <span className="text-xs text-muted">{d.status === "device" ? "connected" : d.status}</span>
                   </div>
                 </div>
               ))}
@@ -107,9 +107,6 @@ export default function ConnectStep({ onDeviceSelected, onBack }: ConnectStepPro
           {!scanning && devices.length === 0 && (
             <div className="mt-4" style={{ textAlign: "center", padding: "24px 16px" }}>
               <p className="text-sm text-muted">No devices found.</p>
-              <p className="text-xs text-muted mt-2">
-                Connect your phone via USB and enable USB Debugging, then click "Scan for devices".
-              </p>
             </div>
           )}
         </div>

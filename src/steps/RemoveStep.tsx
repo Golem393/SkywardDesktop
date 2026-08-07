@@ -91,13 +91,13 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
               {success ? "✓" : "✖"}
             </div>
             <div>
-              <div className="step-title">Remove Skyward Protection</div>
+              <div className="step-title">Remove Skyward</div>
             </div>
           </div>
         </div>
         <div className="card-content">
           <p className="card-description" style={{ marginTop: 0, marginBottom: 16 }}>
-            Removing protection from <strong>{deviceModel}</strong> ({deviceId}). This will relinquish Device Owner administration and uninstall SkywardBlocker completely.
+            This will uninstall Skyward completely from the device <strong>{deviceModel}</strong>.
           </p>
 
           {statusText && (
@@ -202,18 +202,18 @@ export default function RemoveStep({ deviceId, deviceModel, onComplete, onCancel
         }}>
           <div className="card" style={{ maxWidth: 460, width: "100%", margin: 0 }}>
             <div className="card-header">
-              <h3 style={{ margin: 0, color: "var(--destructive)", fontSize: 18 }}>Confirm Decommission & Removal</h3>
+              <h3 style={{ margin: 0, color: "var(--destructive)", fontSize: 18 }}>Confirm Removal</h3>
             </div>
             <div className="card-content">
               <p style={{ fontSize: 14, color: "var(--foreground)", marginTop: 0, lineHeight: 1.5 }}>
-                Are you absolutely sure? This will remove all parental control and digital minimalism protections from this phone.
+                Are you absolutely sure? This will remove Skyward from this phone.
               </p>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
                 <button className="btn btn-outline" onClick={() => setShowWarningModal(false)}>
                   Cancel
                 </button>
                 <button className="btn btn-primary" style={{ background: "var(--destructive)" }} onClick={handleRemoveConfirm}>
-                  Yes, Remove Protection
+                  Yes, Remove Skyward
                 </button>
               </div>
             </div>
