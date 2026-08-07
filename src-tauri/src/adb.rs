@@ -1,6 +1,28 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
+
+/// Build a `Command` that runs without flashing a console window.
+///
+/// Every binary we shell out to (`adb`, `aapt`, `where`) is a console program,
+/// and Windows pops a terminal for each one when a GUI app spawns it — visible
+/// as black windows blinking during device detection and install. `CREATE_NO_WINDOW`
+/// suppresses that. All process spawning should go through this; on other
+/// platforms it's a plain `Command::new`.
+pub fn silent_command<S: AsRef<OsStr>>(program: S) -> Command {
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+    let mut cmd = Command::new(program);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    cmd
+}
 
 /// Errors that can occur when running ADB commands.
 #[derive(Debug, serde::Serialize)]
@@ -107,7 +129,7 @@ pub fn resolve_adb_path(app_handle: Option<&tauri::AppHandle>) -> Result<PathBuf
 
     eprintln!("[ADB Debug] Checking system PATH using '{}' {}", which_cmd, adb_name);
 
-    match Command::new(which_cmd).arg(adb_name).output() {
+    match silent_command(which_cmd).arg(adb_name).output() {
         Ok(output) if output.status.success() => {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if let Some(first_line) = path.lines().next() {
@@ -177,7 +199,7 @@ pub fn resolve_aapt_path() -> Option<PathBuf> {
 
     let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
     for name in ["aapt2", "aapt"] {
-        if let Ok(output) = Command::new(which_cmd).arg(&name).output() {
+        if let Ok(output) = silent_command(which_cmd).arg(&name).output() {
             if output.status.success() {
                 if let Some(first_line) = String::from_utf8_lossy(&output.stdout).lines().next() {
                     let path = PathBuf::from(first_line.trim());
@@ -200,7 +222,7 @@ pub fn run_adb(
     let adb_path = resolve_adb_path(app_handle)?;
     eprintln!("[ADB Debug] Executing command: {} {}", adb_path.display(), args.join(" "));
 
-    let output = Command::new(&adb_path)
+    let output = silent_command(&adb_path)
         .args(args)
         .output()
         .map_err(|e| {

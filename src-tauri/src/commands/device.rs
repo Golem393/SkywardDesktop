@@ -1,6 +1,5 @@
 use crate::adb::{self, Device};
 use std::collections::{HashMap, HashSet};
-use std::process::Command;
 
 /// Result of prerequisite checks on a connected device.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -125,7 +124,7 @@ fn fetch_installed_app_label(app: &tauri::AppHandle, device_id: &str, package: &
 
     adb::run_adb_for_device(Some(app), device_id, &["pull", remote_apk_path, local_apk_str]).ok()?;
 
-    let badging_output = Command::new(&aapt_path)
+    let badging_output = adb::silent_command(&aapt_path)
         .args(["dump", "badging", local_apk_str])
         .output()
         .ok();
