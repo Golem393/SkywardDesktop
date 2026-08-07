@@ -48,7 +48,7 @@ export default function ConnectStep({ onDeviceSelected, onBack }: ConnectStepPro
       <div className="card">
         <div className="card-header">
           <div className="step-header">
-            <div className="step-number active">1</div>
+            <div className="step-number active">2</div>
             <div>
               <div className="step-title">Connect your device</div>
             </div>
