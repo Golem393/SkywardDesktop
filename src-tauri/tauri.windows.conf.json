@@ -3,6 +3,13 @@
   "bundle": {
     "resources": {
       "resources/platform-tools-windows": "platform-tools-windows"
+    },
+    "targets": ["nsis"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      }
     }
   }
 }

@@ -14,6 +14,8 @@ pub struct PrerequisiteResult {
     pub no_accounts: bool,
     /// True if the phone's USB mode is File transfer (MTP) rather than charging only.
     pub file_transfer_enabled: bool,
+    /// True if only the primary user exists (required for set-device-owner).
+    pub single_user: bool,
     /// Unique accounts found on the device, formatted with a friendly app
     /// label where one could be resolved (e.g. "Instagram (user@example.com)"),
     /// falling back to "name (type)" otherwise.
@@ -22,6 +24,39 @@ pub struct PrerequisiteResult {
     pub messages: Vec<String>,
     /// True if all critical checks pass and installation can proceed.
     pub can_proceed: bool,
+}
+
+/// Parses `pm list users` output to count the number of users on the device.
+///
+/// Example output:
+/// ```text
+/// Users:
+///   UserInfo{0:Owner:13c} running
+///   UserInfo{10:Guest:40e}
+/// ```
+fn parse_user_count(pm_output: &str) -> usize {
+    pm_output
+        .lines()
+        .filter(|line| line.trim().starts_with("UserInfo{"))
+        .count()
+}
+
+/// Parses `pm list users` output to extract user IDs (excluding the primary user 0).
+///
+/// Returns a Vec of extra user IDs that can be removed.
+fn parse_extra_user_ids(pm_output: &str) -> Vec<i32> {
+    pm_output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if !line.starts_with("UserInfo{") {
+                return None;
+            }
+            let id_str = line.strip_prefix("UserInfo{")?.split(':').next()?;
+            id_str.parse::<i32>().ok()
+        })
+        .filter(|&id| id != 0) // Exclude primary user (ID 0)
+        .collect()
 }
 
 /// Parses `dumpsys account` output into a deduplicated, sorted list of
@@ -248,6 +283,58 @@ pub async fn get_device_info(app: tauri::AppHandle, device_id: String) -> Result
     })
 }
 
+/// Result of listing users on the device.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserListResult {
+    /// List of extra user IDs (excluding primary user 0)
+    pub extra_user_ids: Vec<i32>,
+    /// Total number of users on the device
+    pub total_users: usize,
+}
+
+/// Tauri command: list all users on the device and identify extra ones that can be removed.
+#[tauri::command]
+pub async fn list_device_users(
+    app: tauri::AppHandle,
+    device_id: String,
+) -> Result<UserListResult, String> {
+    let output = adb::run_adb_for_device(Some(&app), &device_id, &["shell", "pm", "list", "users"])
+        .map_err(|e| e.to_string())?;
+
+    let total_users = parse_user_count(&output);
+    let extra_user_ids = parse_extra_user_ids(&output);
+
+    Ok(UserListResult {
+        extra_user_ids,
+        total_users,
+    })
+}
+
+/// Tauri command: remove an extra user from the device by ID.
+#[tauri::command]
+pub async fn remove_device_user(
+    app: tauri::AppHandle,
+    device_id: String,
+    user_id: i32,
+) -> Result<String, String> {
+    if user_id == 0 {
+        return Err("Cannot remove primary user (ID 0)".to_string());
+    }
+
+    let output = adb::run_adb_for_device(
+        Some(&app),
+        &device_id,
+        &["shell", "pm", "remove-user", &user_id.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+
+    if output.contains("Success") || output.to_lowercase().contains("removed") {
+        Ok(format!("User {} removed successfully.", user_id))
+    } else {
+        Err(format!("Failed to remove user {}: {}", user_id, output.trim()))
+    }
+}
+
 /// Tauri command: open the phone's Accounts screen over ADB.
 ///
 /// `SYNC_SETTINGS` is the Accounts dashboard (verified resolving to
@@ -277,6 +364,7 @@ pub async fn open_account_settings(
 /// 3. No existing device owner is active on the device
 /// 4. No accounts on device (required for `dpm set-device-owner`)
 /// 5. USB mode is File transfer, not charging only
+/// 6. Only primary user exists on device (required for `dpm set-device-owner`)
 ///
 /// Note on (4): the blocking set is every `AccountManager` account, not just Google
 /// ones. Being logged into an app is not the same thing — verified on hardware, where
@@ -412,8 +500,37 @@ pub async fn check_prerequisites(
         false
     };
 
-    let can_proceed =
-        usb_authorized && no_existing_install && no_existing_owner && no_accounts && file_transfer_enabled;
+    // 6. Check that only the primary user exists
+    let single_user = if usb_authorized {
+        let output = adb::run_adb_for_device(
+            Some(&app),
+            &device_id,
+            &["shell", "pm", "list", "users"],
+        )
+        .unwrap_or_default();
+
+        let user_count = parse_user_count(&output);
+        if user_count <= 1 {
+            messages.push("✅ Only the primary user exists on the device".to_string());
+            true
+        } else {
+            messages.push(format!(
+                "❌ Multiple users exist on this device ({} total) — remove extra users before setup",
+                user_count
+            ));
+            false
+        }
+    } else {
+        messages.push("⏳ Cannot check user count (device not authorized)".to_string());
+        false
+    };
+
+    let can_proceed = usb_authorized
+        && no_existing_install
+        && no_existing_owner
+        && no_accounts
+        && file_transfer_enabled
+        && single_user;
 
     Ok(PrerequisiteResult {
         usb_authorized,
@@ -421,6 +538,7 @@ pub async fn check_prerequisites(
         no_existing_owner,
         no_accounts,
         file_transfer_enabled,
+        single_user,
         accounts,
         messages,
         can_proceed,

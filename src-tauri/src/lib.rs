@@ -5,7 +5,7 @@ use commands::auth::verify_subscription;
 use commands::config::push_config;
 use commands::device::{
     check_prerequisites, detect_devices, get_device_info, is_device_connected,
-    open_account_settings,
+    open_account_settings, list_device_users, remove_device_user,
 };
 use commands::install::{
     clear_device_owner, install_apk, launch_app, set_device_owner, uninstall_app,
@@ -27,6 +27,8 @@ pub fn run() {
             get_device_info,
             is_device_connected,
             check_prerequisites,
+            list_device_users,
+            remove_device_user,
             open_account_settings,
             install_apk,
             set_device_owner,
