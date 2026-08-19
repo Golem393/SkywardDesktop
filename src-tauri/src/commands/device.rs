@@ -20,42 +20,81 @@ pub struct PrerequisiteResult {
     /// label where one could be resolved (e.g. "Instagram (user@example.com)"),
     /// falling back to "name (type)" otherwise.
     pub accounts: Vec<String>,
+    /// Extra user spaces beyond the primary user, which block provisioning and
+    /// which the UI offers to delete. Empty when `single_user` is true.
+    pub extra_users: Vec<DeviceUser>,
     /// Human-readable messages for each check.
     pub messages: Vec<String>,
     /// True if all critical checks pass and installation can proceed.
     pub can_proceed: bool,
 }
 
-/// Parses `pm list users` output to count the number of users on the device.
+/// One Android user account (a whole separate profile/space on the phone, not an
+/// `AccountManager` login — see [`parse_unique_accounts`] for those).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeviceUser {
+    /// Android user id. 0 is always the primary/owner user.
+    pub id: i32,
+    /// The user's display name as the phone reports it, e.g. "Owner", "Guest".
+    pub name: String,
+    /// A short description of what kind of space this is, for the parent to
+    /// recognise ("Guest", "Work profile", "Second user").
+    pub kind: String,
+    /// False for user 0 — the primary user can never be removed.
+    pub removable: bool,
+}
+
+/// `UserInfo` flag bits we care about, from `android.content.pm.UserInfo`. Only used
+/// to label a user in the UI, so an unrecognised flag set just falls back to a
+/// generic description.
+const FLAG_GUEST: u32 = 0x0000_0004;
+const FLAG_MANAGED_PROFILE: u32 = 0x0000_0020;
+
+/// Parses `pm list users` output into the full user list.
 ///
 /// Example output:
 /// ```text
 /// Users:
-///   UserInfo{0:Owner:13c} running
-///   UserInfo{10:Guest:40e}
+///     UserInfo{0:Owner:13c} running
+///     UserInfo{10:Guest:404}
 /// ```
-fn parse_user_count(pm_output: &str) -> usize {
-    pm_output
-        .lines()
-        .filter(|line| line.trim().starts_with("UserInfo{"))
-        .count()
-}
-
-/// Parses `pm list users` output to extract user IDs (excluding the primary user 0).
 ///
-/// Returns a Vec of extra user IDs that can be removed.
-fn parse_extra_user_ids(pm_output: &str) -> Vec<i32> {
+/// The braced payload is `id:name:flags` with flags in hex. `UserInfo{` is matched
+/// against adb output, not display copy: don't reword it.
+fn parse_users(pm_output: &str) -> Vec<DeviceUser> {
     pm_output
         .lines()
         .filter_map(|line| {
-            let line = line.trim();
-            if !line.starts_with("UserInfo{") {
-                return None;
-            }
-            let id_str = line.strip_prefix("UserInfo{")?.split(':').next()?;
-            id_str.parse::<i32>().ok()
+            let inner = line.trim().strip_prefix("UserInfo{")?;
+            // Trailing state ("running") sits outside the brace, so cut at the brace
+            // rather than at end-of-line.
+            let inner = &inner[..inner.find('}')?];
+
+            // A user's name is free text and can itself contain ':', so the id is taken
+            // from the front and the flags from the back, leaving whatever is between
+            // them as the name.
+            let (id, rest) = inner.split_once(':')?;
+            let (name, flags) = rest.rsplit_once(':')?;
+            let id: i32 = id.trim().parse().ok()?;
+            let flags = u32::from_str_radix(flags.trim(), 16).unwrap_or(0);
+
+            let kind = if id == 0 {
+                "Main user".to_string()
+            } else if flags & FLAG_GUEST != 0 {
+                "Guest".to_string()
+            } else if flags & FLAG_MANAGED_PROFILE != 0 {
+                "Work profile".to_string()
+            } else {
+                "Second user".to_string()
+            };
+
+            Some(DeviceUser {
+                id,
+                name: name.trim().to_string(),
+                kind,
+                removable: id != 0,
+            })
         })
-        .filter(|&id| id != 0) // Exclude primary user (ID 0)
         .collect()
 }
 
@@ -283,34 +322,14 @@ pub async fn get_device_info(app: tauri::AppHandle, device_id: String) -> Result
     })
 }
 
-/// Result of listing users on the device.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct UserListResult {
-    /// List of extra user IDs (excluding primary user 0)
-    pub extra_user_ids: Vec<i32>,
-    /// Total number of users on the device
-    pub total_users: usize,
-}
-
-/// Tauri command: list all users on the device and identify extra ones that can be removed.
-#[tauri::command]
-pub async fn list_device_users(
-    app: tauri::AppHandle,
-    device_id: String,
-) -> Result<UserListResult, String> {
-    let output = adb::run_adb_for_device(Some(&app), &device_id, &["shell", "pm", "list", "users"])
-        .map_err(|e| e.to_string())?;
-
-    let total_users = parse_user_count(&output);
-    let extra_user_ids = parse_extra_user_ids(&output);
-
-    Ok(UserListResult {
-        extra_user_ids,
-        total_users,
-    })
-}
-
-/// Tauri command: remove an extra user from the device by ID.
+/// Tauri command: delete one extra user space from the phone.
+///
+/// Destructive and irreversible: everything inside that space — its apps, files and
+/// logins — goes with it. The confirmation for that lives in the UI; by the time this
+/// runs the parent has already agreed to it.
+///
+/// User 0 is rejected here rather than trusted to the caller, because `pm remove-user 0`
+/// on a device that allows it wipes the parent's own phone.
 #[tauri::command]
 pub async fn remove_device_user(
     app: tauri::AppHandle,
@@ -318,7 +337,7 @@ pub async fn remove_device_user(
     user_id: i32,
 ) -> Result<String, String> {
     if user_id == 0 {
-        return Err("Cannot remove primary user (ID 0)".to_string());
+        return Err("The main user cannot be removed.".to_string());
     }
 
     let output = adb::run_adb_for_device(
@@ -328,11 +347,37 @@ pub async fn remove_device_user(
     )
     .map_err(|e| e.to_string())?;
 
-    if output.contains("Success") || output.to_lowercase().contains("removed") {
-        Ok(format!("User {} removed successfully.", user_id))
+    // `pm remove-user` prints "Success: removed user" and exits 0; a refusal also exits 0
+    // but prints "Error: couldn't remove user id N", so the exit code alone proves nothing
+    // and the output has to be read. "Success" is matched against adb output, not display
+    // copy: don't reword it.
+    if output.contains("Success") {
+        Ok(format!("Removed user {}.", user_id))
     } else {
-        Err(format!("Failed to remove user {}: {}", user_id, output.trim()))
+        Err(format!(
+            "The phone refused to remove that user: {}",
+            output.trim()
+        ))
     }
+}
+
+/// Tauri command: open the phone's Users screen over ADB.
+///
+/// The fallback for when `pm remove-user` is refused — some OEM skins keep a user
+/// undeletable over ADB but allow it from Settings.
+#[tauri::command]
+pub async fn open_user_settings(
+    app: tauri::AppHandle,
+    device_id: String,
+) -> Result<String, String> {
+    adb::run_adb_for_device(
+        Some(&app),
+        &device_id,
+        &["shell", "am", "start", "-a", "android.settings.USER_SETTINGS"],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok("Opened the Users screen on the phone.".to_string())
 }
 
 /// Tauri command: open the phone's Accounts screen over ADB.
@@ -500,8 +545,13 @@ pub async fn check_prerequisites(
         false
     };
 
-    // 6. Check that only the primary user exists
-    let single_user = if usb_authorized {
+    // 6. Check that the phone has only the one user space
+    //
+    // Android refuses `dpm set-device-owner` outright when a second user, guest or work
+    // profile exists ("there are already several users on the device"). Unlike the
+    // accounts check there is no settling period — the rejection is immediate and stays
+    // until the extra space is actually deleted.
+    let (single_user, extra_users) = if usb_authorized {
         let output = adb::run_adb_for_device(
             Some(&app),
             &device_id,
@@ -509,20 +559,26 @@ pub async fn check_prerequisites(
         )
         .unwrap_or_default();
 
-        let user_count = parse_user_count(&output);
-        if user_count <= 1 {
-            messages.push("✅ Only the primary user exists on the device".to_string());
-            true
+        let extra_users: Vec<DeviceUser> = parse_users(&output)
+            .into_iter()
+            .filter(|user| user.removable)
+            .collect();
+
+        if extra_users.is_empty() {
+            messages.push("✅ Only the main user on the phone".to_string());
+            (true, Vec::new())
         } else {
             messages.push(format!(
-                "❌ Multiple users exist on this device ({} total) — remove extra users before setup",
-                user_count
+                "❌ {} extra user space{} on the phone — Android won't hand over device administration until {} removed",
+                extra_users.len(),
+                if extra_users.len() == 1 { "" } else { "s" },
+                if extra_users.len() == 1 { "it is" } else { "they are" },
             ));
-            false
+            (false, extra_users)
         }
     } else {
-        messages.push("⏳ Cannot check user count (device not authorized)".to_string());
-        false
+        messages.push("⏳ Cannot check user spaces (device not authorized)".to_string());
+        (false, Vec::new())
     };
 
     let can_proceed = usb_authorized
@@ -540,7 +596,60 @@ pub async fn check_prerequisites(
         file_transfer_enabled,
         single_user,
         accounts,
+        extra_users,
         messages,
         can_proceed,
     })
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_single_user_device() {
+        let output = "Users:\n\tUserInfo{0:Owner:c13} running\n";
+        let users = parse_users(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].id, 0);
+        assert_eq!(users[0].name, "Owner");
+        assert_eq!(users[0].kind, "Main user");
+        assert!(!users[0].removable);
+    }
+
+    #[test]
+    fn labels_guest_and_second_user_from_flags() {
+        let output = "Users:\n\tUserInfo{0:Owner:c13} running\n\tUserInfo{10:Guest:404}\n\tUserInfo{11:Kids:410}\n";
+        let users = parse_users(output);
+        assert_eq!(users.len(), 3);
+        assert_eq!(users[1].kind, "Guest");
+        assert_eq!(users[2].kind, "Second user");
+        assert!(users[1].removable && users[2].removable);
+    }
+
+    #[test]
+    fn labels_managed_profile() {
+        let output = "Users:\n\tUserInfo{0:Owner:c13} running\n\tUserInfo{10:Work profile:30} running\n";
+        let users = parse_users(output);
+        assert_eq!(users[1].kind, "Work profile");
+    }
+
+    /// A user's name is free text, so a colon in it must not be mistaken for the
+    /// id/flags delimiters.
+    #[test]
+    fn parses_name_containing_a_colon() {
+        let output = "Users:\n\tUserInfo{10:Work: Personal:404}\n";
+        let users = parse_users(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].id, 10);
+        assert_eq!(users[0].name, "Work: Personal");
+    }
+
+    #[test]
+    fn ignores_non_userinfo_lines() {
+        let output = "Users:\n\nSome other output\n";
+        assert!(parse_users(output).is_empty());
+    }
 }

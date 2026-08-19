@@ -43,6 +43,18 @@ interface PhaseError {
   suggestion: string;
 }
 
+/**
+ * An extra user space on the phone (a second user, guest or work profile) — not an
+ * account login. Android refuses to hand over device administration while one exists.
+ */
+interface DeviceUser {
+  id: number;
+  name: string;
+  /** "Guest", "Work profile" or "Second user" — what to call it to the parent. */
+  kind: string;
+  removable: boolean;
+}
+
 interface VerificationResult {
   is_installed: boolean;
   is_device_owner: boolean;
@@ -158,6 +170,12 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
   /** Accounts seen at any point during setup — the sign-back-in checklist. */
   const [accountsToRestore, setAccountsToRestore] = useState<string[]>(() => recallAccounts(deviceId));
   const [openingSettings, setOpeningSettings] = useState(false);
+  /** Extra user spaces as of the last check — blocks provisioning until deleted. */
+  const [extraUsers, setExtraUsers] = useState<DeviceUser[]>([]);
+  /** Set once the parent has ticked the "I understand this deletes everything" box. */
+  const [userRemovalConfirmed, setUserRemovalConfirmed] = useState(false);
+  const [removingUsers, setRemovingUsers] = useState(false);
+  const [userRemovalError, setUserRemovalError] = useState<string | null>(null);
 
   /**
    * Session expiry mid-install is recorded here and acted on at the very end, rather than
@@ -258,7 +276,9 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         no_existing_owner: boolean;
         no_accounts: boolean;
         file_transfer_enabled: boolean;
+        single_user: boolean;
         accounts: string[];
+        extra_users: DeviceUser[];
         messages: string[];
         can_proceed: boolean;
       }>("check_prerequisites", { deviceId });
@@ -274,6 +294,12 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
         rememberAccounts(deviceId, res.accounts);
         setAccountsToRestore(res.accounts);
       }
+
+      setExtraUsers(res.extra_users);
+      // Re-arm the confirmation whenever the list changes, so a parent who agreed to
+      // delete a guest space isn't treated as having agreed to delete a second user
+      // that appears on a later check.
+      setUserRemovalConfirmed(false);
 
       if (res.can_proceed) {
         setPrereqOk(true);
@@ -308,6 +334,63 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
       await invoke<string>("open_account_settings", { deviceId });
     } catch {
       // Non-fatal — the instructions above the button still stand on their own.
+    } finally {
+      setOpeningSettings(false);
+    }
+  }
+
+  /**
+   * Delete every extra user space on the phone, then re-run the checks to confirm the
+   * phone now reports a single user.
+   *
+   * Irreversible — each removal takes that space's apps, files and logins with it — so it
+   * is gated behind an explicit tick box in the panel below and never runs on its own as
+   * part of installation. Failures are collected rather than thrown at the first one: on a
+   * phone with two extra spaces, removing one of them is still real progress, and the
+   * re-check afterwards shows exactly what is left.
+   */
+  async function removeExtraUsers() {
+    if (removingUsers) return;
+    setRemovingUsers(true);
+    setUserRemovalError(null);
+
+    if (!(await ensureConnected())) {
+      setRemovingUsers(false);
+      return;
+    }
+
+    const failures: string[] = [];
+    for (const user of extraUsers) {
+      setStatusText(`Removing ${user.name || user.kind} from the phone…`);
+      try {
+        await invoke<string>("remove_device_user", { deviceId, userId: user.id });
+      } catch (err) {
+        failures.push(`${user.name || user.kind}: ${String(err)}`);
+      }
+    }
+
+    setRemovingUsers(false);
+
+    if (failures.length > 0) {
+      setUserRemovalError(
+        `${failures.join(" · ")} — open Users on the phone and delete ${
+          failures.length === 1 ? "it" : "them"
+        } there instead, then re-check.`
+      );
+    }
+
+    // Always re-check, even after a failure: the checks are the only thing that decides
+    // whether setup can proceed, and a partial success has to be reflected in them.
+    await checkPrereqs();
+  }
+
+  /** Jump the phone to its Users screen — the fallback when ADB removal is refused. */
+  async function openUserSettings() {
+    setOpeningSettings(true);
+    try {
+      await invoke<string>("open_user_settings", { deviceId });
+    } catch {
+      // Non-fatal — the parent can still reach Settings → Users themselves.
     } finally {
       setOpeningSettings(false);
     }
@@ -623,6 +706,90 @@ export default function InstallStep({ deviceId, deviceModel, schedule, onComplet
                   <span style={{ color: "var(--foreground)", fontWeight: 500 }}>{msg.text}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Extra user spaces. Unlike accounts — which the parent signs out of and straight
+              back into — there is no undo here: deleting a space deletes what's inside it.
+              So this is the one action in setup behind an explicit tick box, and the button
+              stays dead until it's ticked. */}
+          {phase === "prerequisites" && extraUsers.length > 0 && (
+            <div style={{
+              background: "oklch(0.6 0.22 27 / 0.05)",
+              border: "1px solid oklch(0.6 0.22 27 / 0.18)",
+              borderRadius: "var(--radius)",
+              padding: "16px 20px",
+              marginBottom: 16,
+            }}>
+              <h4 style={{ margin: "0 0 8px 0", fontSize: 14, color: "var(--destructive)" }}>
+                Remove {extraUsers.length} extra user space{extraUsers.length === 1 ? "" : "s"} from the phone
+              </h4>
+              <p style={{ fontSize: 13, color: "var(--foreground)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                This phone has more than one user space set up, and Android won't hand over
+                device administration while that's true.{" "}
+                <strong>Deleting a space permanently deletes everything inside it</strong> —
+                its apps, files and logins. This cannot be undone, and unlike signing out of
+                an account there is nothing to restore afterwards.
+              </p>
+              <ul style={{
+                margin: "0 0 14px",
+                paddingLeft: 18,
+                fontSize: 13,
+                color: "var(--foreground)",
+                lineHeight: 1.7,
+              }}>
+                {extraUsers.map((user) => (
+                  <li key={user.id}>
+                    {user.name || user.kind}
+                    {user.name && user.name !== user.kind && (
+                      <span style={{ color: "var(--muted-foreground)" }}> — {user.kind}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              <label style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: "var(--foreground)",
+                marginBottom: 14,
+                cursor: removingUsers ? "default" : "pointer",
+              }}>
+                <input
+                  type="checkbox"
+                  checked={userRemovalConfirmed}
+                  disabled={removingUsers}
+                  onChange={(e) => setUserRemovalConfirmed(e.target.checked)}
+                  style={{ marginTop: 2, flexShrink: 0 }}
+                />
+                I understand {extraUsers.length === 1 ? "this space" : "these spaces"} and
+                everything in {extraUsers.length === 1 ? "it" : "them"} will be permanently
+                deleted.
+              </label>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  className="btn btn-destructive"
+                  onClick={removeExtraUsers}
+                  disabled={!userRemovalConfirmed || removingUsers}
+                >
+                  {removingUsers
+                    ? "Removing…"
+                    : `Remove ${extraUsers.length === 1 ? "it" : "them"} and continue`}
+                </button>
+                <button className="btn btn-outline" onClick={openUserSettings} disabled={openingSettings || removingUsers}>
+                  {openingSettings ? "Opening…" : "Open Users on the phone"}
+                </button>
+              </div>
+
+              {userRemovalError && (
+                <p style={{ fontSize: 12, color: "var(--destructive)", margin: "12px 0 0", lineHeight: 1.5 }}>
+                  {userRemovalError}
+                </p>
+              )}
             </div>
           )}
 
